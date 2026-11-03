@@ -4,8 +4,9 @@ These templates are for the extension only. They do not change the original
 OPUS files. All input cells are filled with concrete example values; no guessing
 or replacement of placeholder words is needed to validate the supplied example.
 Owner-aware propagation, annual launch policies, accounting and result export are
-available (see the parent README). Attack events, time-varying launch schedules,
-and the PowerShell launcher are still future steps.
+available (see the parent README), along with single-satellite fragmentation.
+Disabling, multiple attacks, time-varying launch schedules, and the PowerShell
+launcher are still future steps.
 
 ## Which file to edit
 
@@ -13,6 +14,7 @@ and the PowerShell launcher are still future steps.
 | --- | --- |
 | `owner-scenario.csv` | Opt-in and selected physical/economic parameters, filled with current defaults |
 | `owner-scenario-launches.csv` | Owner-specific launch policies, with targets and rate limits |
+| `single-satellite-events.csv` | Optional one-satellite fragmentation template; copy/rename to activate |
 | `owner-scenario-owners/example-owner.csv` | Named constellation owner's initial counts in all 40 shells |
 | `owner-scenario-owners/generic-owner.csv` | Explicit remainder of the initial satellite population |
 | `field-reference.csv` | Spreadsheet-readable descriptions, types, units, and example values; not a simulation input |
@@ -121,6 +123,26 @@ also applies if no launches file exists. The example assigns a target of 3000
 slotted satellites to example-owner in shell 10, and 300 to generic-owner in
 shell 29. These are independent rules even when owners share a shell. Rules
 are recalculated annually from current counts; no behavior profiles are used.
+
+## Fragmentation event values
+
+For an attack, copy `single-satellite-events.csv` to `<scenario>-events.csv`
+beside the scenario parameter file (for example `owner-scenario-events.csv`).
+It is deliberately not loaded automatically under its template filename.
+
+| Event column | Allowed value | Example |
+| --- | --- | --- |
+| `event_id` | Nonempty ID with letters/digits/hyphens/underscores; first character alphanumeric | `fragment-001` |
+| `time_year` | Finite nonnegative simulation time, at or before the run's end | `0.5` |
+| `event_type` | Currently only `fragmentation` | `fragmentation` |
+| `owner_id` | An existing owner ID | `example-owner` |
+| `shell` | Integer 1-40 on the default grid | `10` |
+| `population` | `S` or `Su` | `S` |
+| `count` | Exactly `1` in this version | `1` |
+
+Only one data row is supported initially. There must still be at least one
+satellite of the targeted owner/population in that shell when the event executes.
+Use `runScenario` for configured events; `propagateScenario` rejects them.
 
 ## Saving CSV files from Excel
 

@@ -12,12 +12,18 @@ function exportResults(result,folder)
     ownerHistory=table(h.T(ti(:)),ki(:),reshape(ids(oi(:)),[],1), ...
         h.owners.S(:),h.owners.Su(:),h.owners.D(:), ...
         'VariableNames',{'time','shell','owner_id','S','Su','D'});
+    ownerHistory.sample_index=ti(:);
+    ownerHistory.phase=h.phase(ti(:));
+    ownerHistory.event_id=h.event_id(ti(:));
     [ti,ki]=ndgrid(1:nt,1:n);
     totals=table(h.T(ti(:)),ki(:),h.S(:),h.Su(:),h.D(:),h.N(:),h.total(:), ...
         'VariableNames',{'time','shell','S','Su','D','N','total'});
+    totals.sample_index=ti(:);
+    totals.phase=h.phase(ti(:));
+    totals.event_id=h.event_id(ti(:));
     writetable(ownerHistory,fullfile(folder,'owner-populations.csv'));
     writetable(totals,fullfile(folder,'shell-populations.csv'));
-    fields={'launch_decisions','flows','events','event_participants','source_manifest'};
+    fields={'launch_decisions','flows','events','event_participants','source_manifest','fragmentations','population_balance'};
     for i=1:numel(fields)
         name=fields{i}; writetable(result.(name),fullfile(folder,[strrep(name,'_','-') '.csv']));
     end

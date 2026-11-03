@@ -6,6 +6,9 @@ function OUT = propagateScenario(parameter_file, tspan, launches)
     if ~scenario.attack.enabled
         error('OPUS:AttackNotEnabled', 'Owner propagation requires an enabled extension scenario.');
     end
+    if ~isempty(scenario.attack.events)
+        error('OPUS:EventsRequireScenarioRunner','Use opusattack.runScenario to execute configured attack events.');
+    end
     owners = scenario.attack.owners;
     VAR = scenario.VAR;
     if nargin < 3

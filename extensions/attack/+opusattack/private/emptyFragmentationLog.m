@@ -1,0 +1,9 @@
+function log = emptyFragmentationLog()
+    names={'event_id','log_event_id','time_year','owner_id','shell','population', ...
+        'requested_count','destroyed_count','satellite_mass_kg','debris_piece_mass_kg', ...
+        'debris_added','active_before','active_after','N_before','N_after', ...
+        'D_before','D_after','removed_mass_kg','generated_mass_kg','mass_residual_kg'};
+    types=repmat({'double'},1,numel(names));
+    types([1,2,4,6])={'string','string','string','string'};
+    log=table('Size',[0,numel(names)],'VariableTypes',types,'VariableNames',names);
+end

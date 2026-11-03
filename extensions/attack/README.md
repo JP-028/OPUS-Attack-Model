@@ -15,8 +15,10 @@ directory itself. The package does not override the names of upstream functions.
   with shared debris N and constant owner-specific launch rates.
 - Annual owner-specific target, replacement, fixed-rate or no-launch decisions.
 - Integrated expected flow accounting, attributed interval event records and exports.
+- One scheduled fragmentation event destroying exactly one active satellite of
+  a selected owner and adding standard debris to N in the same shell.
 
-Destruction/disabling events, time-varying launch-schedule files and independent
+Disabling, multiple attacked satellites/events, time-varying launch schedules and independent
 owner economic equilibrium decisions are not implemented yet. Behavior profiles
 are deferred. `runScenario` now runs the annual owner controllers and exports
 results. `propagateScenario` remains available for physical-only comparisons.
@@ -98,7 +100,7 @@ files and reallocating counts from the generic owner.
 Disabled satellites will use their owner's D population rather than a separate
 U population. The planned attack transfer adds D in the same shell, without the
 retirement-related relocation to the disposal shell. Owner-specific propagation
-is implemented; the attack transfers themselves are not implemented yet.
+is implemented; the disabling transfer itself is not implemented yet.
 
 ## Owner-aware physical propagation
 
@@ -126,7 +128,8 @@ OUT = opusattack.propagateScenario(p, linspace(0,1,5), launches);
 
 These are fixed rates for the integration interval, not automatically selected
 launch policies or individual rocket launches. Omitting `launches` means zero
-launches. No economic solver or attack event is run by this function. No files
+launches. No economic solver or attack event is run by this function. It rejects
+scenarios containing events rather than silently ignoring them. No files
 are written automatically by `propagateScenario`; the returned data can be saved
 to a MAT file. `runScenario`, in contrast, exports by default.
 
@@ -201,7 +204,7 @@ will be reached after simultaneous retirement and collisions. S and Su policies
 are owner-specific but are not yet independently optimized economic decisions.
 
 `runScenario(parameter_file, years, outputDirectory)` updates launch rates at
-year boundaries, propagates once per interval, and uses that final state for the
+year boundaries, propagates between boundaries/events, and uses the final state for the
 next decision. A fractional final year is supported. Omitting years selects one
 year. Omitting outputDirectory creates a unique directory in `extensions/attack/results/`.
 An explicitly empty third argument (`''`) runs in memory only. Existing output
@@ -227,10 +230,10 @@ invented owner. An owner may appear as both affected and counterpart in an event
 
 The major-event table includes launches and collision-related summaries with
 start/end times. It excludes routine retirement and drag, which remain in the
-complete flow ledger. `event_time` is NaN for these interval records; future
-instantaneous attacks can use equal start/end times and a finite event_time.
+complete flow ledger. `event_time` is NaN for these interval records. Fragmentation
+records have equal start/end times and a finite event_time.
 The separate participant table links all known involved owners and their roles
-to the event ID. No destruction/disabling event scheduler is implemented yet.
+to the event ID. Fragmentation is scheduled as described below; disabling is not supported yet.
 
 Each export contains:
 
@@ -241,10 +244,12 @@ Each export contains:
 | `shell-populations.csv` | Aggregate S, Su, D, N and total counts |
 | `launch-decisions.csv` | Owner-specific policy and rate at each interval start |
 | `flows.csv` | Nonzero integrated channel totals per decision interval |
-| `events.csv`, `event-participants.csv` | Major interval records and participating owners |
-| `diagnostics.csv` | Maximum population balance residual per interval |
+| `events.csv`, `event-participants.csv` | Major interval records, instantaneous fragmentation and participating owners |
+| `fragmentations.csv` | Exact attack quantities, before/after counts and representative mass balance |
+| `population-balance.csv` | Final per-shell/per-owner balance including continuous flows and attacks |
+| `diagnostics.csv` | Maximum continuous population balance residual per integration segment |
 | `metadata.json`, `source-manifest.csv` | Run settings and SHA-256 hashes of source/input dependencies |
-| `inputs/` | Copies of the scenario, owner and optional launch-policy CSVs as read |
+| `inputs/` | Copies of the scenario, owner, optional launch-policy and optional event CSVs as read |
 | `COMPLETE.txt` | Written last to mark a completed export |
 
 CSV quantities may contain fractional expected objects. Zero channels and finer
@@ -253,6 +258,75 @@ dimensions are linear in owner count; detailed owner-pair flow accounting grows
 approximately quadratically. Non-opt-in scenarios continue using the untouched
 upstream entry points. Regression tests compare against original MOCAT under
 equivalent launch inputs, not against the old controller's stale initial counts.
+
+## Single-satellite fragmentation
+
+The complete example is `examples/fragmentation.csv`. It uses the same owners
+and launch policies as `examples/attack-example.csv` (which remains an attack-free
+control), and adds `fragmentation-events.csv`:
+
+```csv
+event_id,time_year,event_type,owner_id,shell,population,count
+fragment-001,0.5,fragmentation,attacked,10,S,1
+```
+
+This destroys one of the attacked owner's S satellites in shell 10 at year 0.5.
+No F or U population is introduced. The active owner count decreases by exactly
+one; N in that shell increases by `VAR.mass(1)/VAR.mass(3)` for S or
+`VAR.mass(4)/VAR.mass(3)` for Su. With the defaults, the increase is
+`223 / 0.640 = 348.4375` standard debris objects. D and all other owner counts
+are unchanged at the instant of the attack. Fractions are retained, conserving
+the representative mass of the immediate conversion. The subsequent original
+MOCAT breakup equations are not a globally mass-conserving material model.
+
+The new debris is immediately distributed within the attacked shell and follows
+the standard N dynamics. Later debris counts need not differ from a control by
+exactly 348.4375: drag, collisions and subsequent annual launch responses change
+both trajectories. This is a functional implementation of the specified
+shell-average assumption, not validation of a real breakup-cloud distribution.
+
+Run and export from the repository root in PowerShell:
+
+```powershell
+matlab -batch "addpath('extensions/attack'); r=opusattack.runScenario('extensions/attack/examples/fragmentation.csv',1); disp(r.fragmentations); disp(r.output_directory);"
+```
+
+Or run in MATLAB without exporting:
+
+```matlab
+addpath('extensions/attack');
+r = opusattack.runScenario('extensions/attack/examples/fragmentation.csv',1,'');
+r.fragmentations
+r.max_global_balance_residual
+```
+
+For another scenario, copy the event template to `<scenario>-events.csv` beside
+its parameter CSV and set an existing owner ID. Missing or header-only event
+files mean no attack. The first version explicitly rejects more than one event,
+counts other than 1, unsupported event types, invalid targets and times outside
+the run horizon. The actual remaining target count is checked at execution time;
+if fewer than one remain, the run stops rather than reducing the attack silently.
+
+Timing is explicit: propagate up to the event, apply the state jump, and continue.
+At year zero and annual boundaries, the attack occurs before the launch decision.
+A midyear attack does not reset rates already decided for that year. An attack
+exactly at the simulation end is included in the final state without a new launch
+decision. The event is executed exactly once.
+
+History/export schema version 2 adds `sample_index`, `phase`, and `event_id` to
+the owner and shell population CSVs. Two rows per shell/owner at the event time
+are intentional: `pre_event` and `post_event`. Do not deduplicate on time alone.
+Normal samples are `regular`. Full owner/debris states before and after the
+attack are also retained in `result.attack_snapshots` in the MAT file.
+
+The event log uses an `attack:` prefix for configured event IDs, distinguishing
+them from automatically generated interval-record IDs. Its kind is
+`instantaneous_attack`; the attacked owner is the known participant. No attacker
+identity is invented. The flow ledger records one source object and the generated
+N objects. `result.population_balance` and `max_global_balance_residual` include
+that jump, while per-segment residuals audit continuous propagation separately.
+`fragmentations.csv` reports masses and exact local changes. The event input is
+included in scenario identity and copied to `inputs/events.csv` on export.
 
 ## Tests and upstream synchronization
 

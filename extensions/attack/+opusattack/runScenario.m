@@ -1,5 +1,5 @@
 function result = runScenario(parameter_file, years, outputDirectory)
-% Annual owner-specific decisions and shared physics; no attack events yet.
+% Annual owner decisions, shared physics, and one scheduled fragmentation event.
 % Default horizon: 1 year. Default export: extensions/attack/results/<unique run>.
 % Pass '' as outputDirectory for an in-memory run without file writes.
     if nargin<2, years=1; end
@@ -8,11 +8,17 @@ function result = runScenario(parameter_file, years, outputDirectory)
     if ~scenario.attack.enabled
         error('OPUS:AttackNotEnabled','Use the original OPUS workflow for non-opt-in scenarios.');
     end
+    planned=scenario.attack.events;
+    if any(planned.time_year>years)
+        error('OPUS:EventOutsideHorizon','The configured attack must lie within [0, %.15g] years.',years);
+    end
     [V,costs]=prepareDynamics(scenario);
     owners=scenario.attack.owners;
     N=V.x0(2*V.N_shell+1:3*V.N_shell);
-    times=0:1:years;
-    if times(end)<years, times(end+1)=years; end
+    initialOwners=owners; initialN=N;
+    annualTimes=0:1:years;
+    if annualTimes(end)<years, annualTimes(end+1)=years; end
+    times=unique([annualTimes,planned.time_year']);
     result.scenario=scenario;
     result.parameters=V;
     result.cost_parameters=costs;
@@ -22,36 +28,74 @@ function result = runScenario(parameter_file, years, outputDirectory)
     result.flows=table;
     result.events=table;
     result.event_participants=table;
+    result.fragmentations=emptyFragmentationLog();
+    result.attack_snapshots=cell(0,1);
     result.history=struct('T',[],'S',[],'D',[],'Su',[],'N',[],'total',[]);
     result.history.owners=struct('ids',{owners.ids},'S',[],'D',[],'Su',[]);
-    for period=1:numel(times)-1
-        a=times(period); b=times(period+1);
-        [launches,decisions]=opusattack.ownerLaunches(owners,scenario.attack.launch_rules,V,b-a);
-        decisions.start_time=repmat(a,height(decisions),1);
-        decisions.end_time=repmat(b,height(decisions),1);
-        result.launch_decisions=[result.launch_decisions;decisions];
+    result.history.phase=strings(0,1);
+    result.history.event_id=strings(0,1);
+    result.history=appendState(result.history,0,owners,N,"regular","");
+    executed=false(height(planned),1);
+    for period=1:numel(times)
+        a=times(period);
+        % Attack first at a boundary, then (if scheduled) the annual decision.
+        hit=find(planned.time_year==a & ~executed);
+        for j=hit'
+            event=table2struct(planned(j,:));
+            snapshot=struct('time',a,'event_id',"attack:"+string(event.event_id), ...
+                'before',struct('owners',owners,'N',N));
+            [owners,N,report]=opusattack.applyFragmentation(owners,N,event,V);
+            snapshot.after=struct('owners',owners,'N',N);
+            result.attack_snapshots{end+1}=snapshot;
+            result.fragmentations=[result.fragmentations;report];
+            [flow,eventRecord,participants]=fragmentationTables(report);
+            result.flows=[result.flows;flow];
+            result.events=[result.events;eventRecord];
+            result.event_participants=[result.event_participants;participants];
+            result.history.phase(end)="pre_event";
+            result.history.event_id(end)=report.log_event_id;
+            result.history=appendState(result.history,a,owners,N,"post_event",report.log_event_id);
+            executed(j)=true;
+        end
+        if period==numel(times), break; end
+        b=times(period+1);
+        if ismember(a,annualTimes)
+            nextAnnual=annualTimes(find(annualTimes>a,1));
+            [launches,decisions]=opusattack.ownerLaunches(owners,scenario.attack.launch_rules,V,nextAnnual-a);
+            decisions.start_time=repmat(a,height(decisions),1);
+            decisions.end_time=repmat(nextAnnual,height(decisions),1);
+            result.launch_decisions=[result.launch_decisions;decisions];
+        end
+        % A midyear event splits propagation but does not reset that year's rates.
         OUT=opusattack.propagateOwners(linspace(a,b,max(3,V.N_step)),owners,N,launches,V);
         result.intervals{period}=OUT;
         [flows,events,participants]=flowTables(OUT,a,b,height(result.events));
         result.flows=[result.flows;flows];
         result.events=[result.events;events];
         result.event_participants=[result.event_participants;participants];
-        first=1+(period>1);
+        first=2; % The initial/current boundary state is already in history.
         for name={'T','S','D','Su','N','total'}
             key=name{1}; result.history.(key)=[result.history.(key);OUT.(key)(first:end,:)];
         end
         for name={'S','D','Su'}
             key=name{1}; result.history.owners.(key)=cat(1,result.history.owners.(key),OUT.owners.(key)(first:end,:,:));
         end
+        result.history.phase=[result.history.phase;repmat("regular",numel(OUT.T)-1,1)];
+        result.history.event_id=[result.history.event_id;repmat("",numel(OUT.T)-1,1)];
         owners=OUT.final.owners;
         N=OUT.final.N;
     end
-    result.final=OUT.final;
-    result.metadata=struct('schema_version',1,'scenario_name',scenario.name, ...
+    if ~all(executed), error('OPUS:UnexecutedAttack','An attack was not executed.'); end
+    result.final=struct('owners',owners,'N',N);
+    result.population_balance=populationBalance(initialOwners,initialN,result.final,result.flows);
+    result.max_global_balance_residual=max(abs(result.population_balance.residual));
+    result.metadata=struct('schema_version',2,'scenario_name',scenario.name, ...
         'years',years,'matlab_version',version,'created_utc',char(datetime('now','TimeZone','UTC')), ...
         'launch_default','current owner count divided by Dt', ...
         'collision_records','ordered expected flow contributions, not individual incidents', ...
-        'attacks_supported',false, 'relative_tolerance',1e-8,'absolute_tolerance',1e-8);
+        'attacks_supported',true,'attack_scope','one fragmentation event destroying one active satellite', ...
+        'attack_timing','before annual decisions; midyear launches held until next annual decision', ...
+        'relative_tolerance',1e-8,'absolute_tolerance',1e-8);
     result.max_balance_residual=max(cellfun(@(o)o.max_balance_residual,result.intervals));
     result.source_manifest=sourceManifest();
     if nargin<3
@@ -76,8 +120,24 @@ function inputs=snapshotInputs(parameter_file)
     end
     launchFile=fullfile(parent,[stem '-launches.csv']);
     if isfile(launchFile), paths{end+1}=launchFile; names{end+1}='launches.csv'; end
+    eventFile=fullfile(parent,[stem '-events.csv']);
+    if isfile(eventFile), paths{end+1}=eventFile; names{end+1}='events.csv'; end
     inputs=struct('path',paths,'snapshot_name',names,'contents',cell(size(paths)));
     for i=1:numel(inputs), inputs(i).contents=fileread(inputs(i).path); end
+end
+
+function h=appendState(h,time,owners,N,phase,eventId)
+    n=numel(N); m=numel(owners.ids);
+    h.T(end+1,1)=time;
+    for name={'S','D','Su'}
+        key=name{1};
+        h.(key)(end+1,:)=sum(owners.(key),2)';
+        h.owners.(key)=cat(1,h.owners.(key),reshape(owners.(key),1,n,m));
+    end
+    h.N(end+1,:)=N';
+    h.total(end+1,:)=h.S(end,:)+h.D(end,:)+h.Su(end,:)+h.N(end,:);
+    h.phase(end+1,1)=phase;
+    h.event_id(end+1,1)=eventId;
 end
 
 function manifest=sourceManifest()

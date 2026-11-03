@@ -24,3 +24,10 @@ launches,population,text,S or Su,active population,S,D and N cannot receive laun
 launches,mode,text,target or replacement or fixed or none,policy,target,Unlisted combinations use uncapped replacement
 launches,target_size,number,Finite and nonnegative,satellites,3000,Use 0 outside target mode
 launches,max_launch_rate,number,Finite and nonnegative,satellites per year,1500,Use 0 for none mode; fixed mode launches at this rate
+events,event_id,text,Alphanumeric ID with hyphens or underscores,event ID,fragment-001,First character alphanumeric; only one event row supported
+events,time_year,number,Finite and nonnegative within the simulation horizon,years from simulation start,0.5,Not a calendar year
+events,event_type,text,fragmentation,event type,fragmentation,Disabling not yet supported
+events,owner_id,text,An existing owner filename without .csv,owner ID,example-owner,At least one target satellite must remain at execution time
+events,shell,integer,1 to 40 on the default grid,shell index,10,Fragments are added to N in this shell
+events,population,text,S or Su,active population,S,Retains the selected population's configured mass for conversion
+events,count,integer,Exactly 1,satellites,1,Multiple satellites are deliberately rejected in this first version
