@@ -1,0 +1,12 @@
+parameter_type,parameter_name,parameter_value
+attack,enabled,1
+MOCAT,Dt,5
+MOCAT,P,0
+econ,satLifetime,5
+econ,disposalTime,5
+econ,discountRate,0.05
+econ,intercept,750000
+econ,coef,100
+econ,tax,0
+econ,delta_v_cost,1000
+econ,lift_price,5000

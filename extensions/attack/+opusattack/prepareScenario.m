@@ -34,6 +34,7 @@ function scenario = prepareScenario(parameter_file, model_type)
         opusattack.modifyParameters(VAR, econ_params, constellation_params, parameter_file);
     if attack_params.enabled
         attack_params.owners = opusattack.loadOwners(parameter_file, VAR);
+        attack_params.launch_rules = opusattack.loadLaunchRules(parameter_file, attack_params.owners, VAR.N_shell);
     end
     % Preserve the upstream naming inputs for disabled scenarios. Owner counts
     % participate in enabled scenario identities, without writing output folders.
@@ -41,7 +42,9 @@ function scenario = prepareScenario(parameter_file, model_type)
     encoded = [jsonencode(VAR), jsonencode(GMPHD_params), jsonencode(econ_params), ...
         jsonencode(constellation_params), jsonencode(launch_mask)];
     if attack_params.enabled
-        encoded = [encoded, jsonencode(attack_params)];
+        identity = attack_params;
+        identity.launch_rules = table2struct(identity.launch_rules);
+        encoded = [encoded, jsonencode(identity)];
     end
     digest = java.security.MessageDigest.getInstance('SHA-256');
     hash = digest.digest(uint8(encoded));
