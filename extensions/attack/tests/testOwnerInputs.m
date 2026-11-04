@@ -131,7 +131,7 @@ function testExampleMatchesRepositoryPopulation(t)
     Su = readmatrix(fullfile(root,'x0_TLE','Counts_PAYLOADunslot_bins_35.csv'));
     D = readmatrix(fullfile(root,'x0_TLE','Counts_DERELICT_bins_35.csv'));
     V = struct('N_shell',40,'x0',[S(:,2);D(:,2);zeros(40,1);Su(:,2)]);
-    p = fullfile(extensionRoot,'examples','attack-example.csv');
+    p = fullfile(extensionRoot,'examples','baseline','attack-example.csv');
     result = opusattack.loadOwners(p,V);
     verifyEqual(t, result.S(10,1), 1000);
     verifyEqual(t, sum(result.S,2), S(:,2));
@@ -144,7 +144,7 @@ end
 
 function testExtensionPreparationAndEnvironment(t)
     extensionRoot = fileparts(fileparts(mfilename('fullpath')));
-    p = fullfile(extensionRoot,'examples','attack-example.csv');
+    p = fullfile(extensionRoot,'examples','baseline','attack-example.csv');
     oldFolder = pwd;
     oldPath = path;
     scenario = opusattack.prepareScenario(p);

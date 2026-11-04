@@ -1,0 +1,3 @@
+owner_id,shell,population,mode,target_size,max_launch_rate
+attacked,10,S,target,3000,1500
+generic,29,S,target,300,150

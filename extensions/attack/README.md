@@ -1,5 +1,8 @@
 # OPUS attack extension
 
+For practical instructions, read the [simulation guide](templates/SIMULATION_GUIDE.md).
+The [examples index](examples/README.md) lists the runnable scenario folders.
+
 All attack additions live in this directory. The original OPUS source files,
 documentation, input data, and entry points are unmodified. Add this directory
 to MATLAB's path to use the `opusattack` package; do not add the `+opusattack`
@@ -15,10 +18,12 @@ directory itself. The package does not override the names of upstream functions.
   with shared debris N and constant owner-specific launch rates.
 - Annual owner-specific target, replacement, fixed-rate or no-launch decisions.
 - Integrated expected flow accounting, attributed interval event records and exports.
-- One scheduled fragmentation event destroying exactly one active satellite of
-  a selected owner and adding standard debris to N in the same shell.
+- Multiple scheduled fragmentation events, each destroying exactly one active
+  satellite of a selected owner and adding standard debris to N in the same shell.
+- Scheduled disabling events transferring a chosen number of active satellites
+  to the same owner's D population in the same shell, using the same event CSV.
 
-Disabling, multiple attacked satellites/events, time-varying launch schedules and independent
+Bulk destruction within one event, time-varying launch schedules and independent
 owner economic equilibrium decisions are not implemented yet. Behavior profiles
 are deferred. `runScenario` now runs the annual owner controllers and exports
 results. `propagateScenario` remains available for physical-only comparisons.
@@ -30,7 +35,7 @@ From the OPUS repository root in MATLAB:
 
 ```matlab
 addpath('extensions/attack');
-scenario = opusattack.prepareScenario('extensions/attack/examples/attack-example.csv');
+scenario = opusattack.prepareScenario('extensions/attack/examples/baseline/attack-example.csv');
 owners = scenario.attack.owners;
 % owners.ids identifies columns; owners.S, owners.Su and owners.D are shell-by-owner.
 ```
@@ -39,7 +44,7 @@ This reads input and returns configuration without writing results. To simulate
 five years with annual owner-specific launch decisions and export the results:
 
 ```matlab
-result = opusattack.runScenario('extensions/attack/examples/attack-example.csv', 5);
+result = opusattack.runScenario('extensions/attack/examples/baseline/attack-example.csv', 5);
 disp(result.output_directory);
 ```
 
@@ -97,10 +102,10 @@ not historical ownership data. When changing the attacked counts, adjust the
 generic counts so that the totals still match. Add further owners by creating
 files and reallocating counts from the generic owner.
 
-Disabled satellites will use their owner's D population rather than a separate
-U population. The planned attack transfer adds D in the same shell, without the
-retirement-related relocation to the disposal shell. Owner-specific propagation
-is implemented; the disabling transfer itself is not implemented yet.
+Disabled satellites use their owner's D population rather than a separate
+U population. The attack transfer adds D in the same shell, without the
+retirement-related relocation to the disposal shell. Their owner remains known
+while the derelicts follow passive drag and collision dynamics.
 
 ## Owner-aware physical propagation
 
@@ -230,10 +235,10 @@ invented owner. An owner may appear as both affected and counterpart in an event
 
 The major-event table includes launches and collision-related summaries with
 start/end times. It excludes routine retirement and drag, which remain in the
-complete flow ledger. `event_time` is NaN for these interval records. Fragmentation
+complete flow ledger. `event_time` is NaN for these interval records. Attack
 records have equal start/end times and a finite event_time.
 The separate participant table links all known involved owners and their roles
-to the event ID. Fragmentation is scheduled as described below; disabling is not supported yet.
+to the event ID. Fragmentation and disabling share the schedule described below.
 
 Each export contains:
 
@@ -244,8 +249,9 @@ Each export contains:
 | `shell-populations.csv` | Aggregate S, Su, D, N and total counts |
 | `launch-decisions.csv` | Owner-specific policy and rate at each interval start |
 | `flows.csv` | Nonzero integrated channel totals per decision interval |
-| `events.csv`, `event-participants.csv` | Major interval records, instantaneous fragmentation and participating owners |
+| `events.csv`, `event-participants.csv` | Major interval records, instantaneous attacks and participating owners |
 | `fragmentations.csv` | Exact attack quantities, before/after counts and representative mass balance |
+| `disablings.csv` | Disabled counts, retained physical properties, before/after active/D/N counts and transfer balances |
 | `population-balance.csv` | Final per-shell/per-owner balance including continuous flows and attacks |
 | `diagnostics.csv` | Maximum continuous population balance residual per integration segment |
 | `metadata.json`, `source-manifest.csv` | Run settings and SHA-256 hashes of source/input dependencies |
@@ -259,10 +265,10 @@ approximately quadratically. Non-opt-in scenarios continue using the untouched
 upstream entry points. Regression tests compare against original MOCAT under
 equivalent launch inputs, not against the old controller's stale initial counts.
 
-## Single-satellite fragmentation
+## Scheduled fragmentation
 
-The complete example is `examples/fragmentation.csv`. It uses the same owners
-and launch policies as `examples/attack-example.csv` (which remains an attack-free
+The complete example is `examples/fragmentation/fragmentation.csv`. It uses the same owners
+and launch policies as `examples/baseline/attack-example.csv` (which remains an attack-free
 control), and adds `fragmentation-events.csv`:
 
 ```csv
@@ -288,34 +294,69 @@ shell-average assumption, not validation of a real breakup-cloud distribution.
 Run and export from the repository root in PowerShell:
 
 ```powershell
-matlab -batch "addpath('extensions/attack'); r=opusattack.runScenario('extensions/attack/examples/fragmentation.csv',1); disp(r.fragmentations); disp(r.output_directory);"
+matlab -batch "addpath('extensions/attack'); r=opusattack.runScenario('extensions/attack/examples/fragmentation/fragmentation.csv',1); disp(r.fragmentations); disp(r.output_directory);"
 ```
 
 Or run in MATLAB without exporting:
 
 ```matlab
 addpath('extensions/attack');
-r = opusattack.runScenario('extensions/attack/examples/fragmentation.csv',1,'');
+r = opusattack.runScenario('extensions/attack/examples/fragmentation/fragmentation.csv',1,'');
 r.fragmentations
 r.max_global_balance_residual
 ```
 
-For another scenario, copy the event template to `<scenario>-events.csv` beside
-its parameter CSV and set an existing owner ID. Missing or header-only event
-files mean no attack. The first version explicitly rejects more than one event,
-counts other than 1, unsupported event types, invalid targets and times outside
-the run horizon. The actual remaining target count is checked at execution time;
-if fewer than one remain, the run stops rather than reducing the attack silently.
+For another scenario, copy an event template to `<scenario>-events.csv` beside
+its parameter CSV and set existing owner IDs. Missing or header-only event
+files mean no attack. The loader rejects duplicate event IDs (ignoring case),
+fragmentation counts other than 1, nonpositive or fractional disabling counts,
+unsupported event types, invalid targets and times outside the run horizon.
+The actual remaining target count is checked at execution time; if fewer than
+the requested count remain, the run stops rather than reducing the attack silently.
+
+### Multiple attacks: choose when, who and where
+
+The complete `examples/multiple-attacks/multiple-attacks.csv` scenario uses this schedule in
+`examples/multiple-attacks/multiple-attacks-events.csv`:
+
+```csv
+event_id,time_year,event_type,owner_id,shell,population,count
+attack-001,0.25,fragmentation,attacked,10,S,1
+attack-002,0.75,fragmentation,attacked,10,S,1
+attack-003,0.75,fragmentation,generic,11,Su,1
+attack-004,1,fragmentation,generic,29,S,1
+```
+
+Edit `time_year` for elapsed simulation years (decimal times are allowed),
+`owner_id` for the owner filename without `.csv`, and `shell` for the altitude
+shell index. `templates/shell-reference.csv` lists the default altitude bounds.
+There are no horizontal divisions or localized debris clusters within a shell.
+`population` selects active slotted S or active fringe Su satellites. Each row
+destroys one satellite; use a distinct `event_id` for each row. The runner sorts
+events chronologically and executes equal-time rows in their original CSV order.
+Repeated attacks may target the same owner and shell, or different ones.
+
+```powershell
+matlab -batch "addpath('extensions/attack'); r=opusattack.runScenario('extensions/attack/examples/multiple-attacks/multiple-attacks.csv',1); disp(r.fragmentations); disp(r.output_directory);"
+```
+
+The final numeric argument is the simulation horizon in years; it must include
+all scheduled events. For your own scenario, start from
+`templates/attack-schedule-events.csv` and rename it to match the parameter file.
+The four example attacks immediately generate a combined 1393.75 standard N
+objects from 892 kg using default masses. These are sums of the instantaneous
+additions, not the final debris difference from a control run.
 
 Timing is explicit: propagate up to the event, apply the state jump, and continue.
-At year zero and annual boundaries, the attack occurs before the launch decision.
+At year zero and annual boundaries, all attacks occur before the launch decision.
 A midyear attack does not reset rates already decided for that year. An attack
 exactly at the simulation end is included in the final state without a new launch
-decision. The event is executed exactly once.
+decision. Each event is executed exactly once.
 
-History/export schema version 2 adds `sample_index`, `phase`, and `event_id` to
-the owner and shell population CSVs. Two rows per shell/owner at the event time
-are intentional: `pre_event` and `post_event`. Do not deduplicate on time alone.
+History/export schema version 3 retains version 2's `sample_index`, `phase`, and `event_id` in
+the owner and shell population CSVs. Each event has two rows per shell/owner at
+its time: `pre_event` and `post_event`. Two simultaneous events therefore have
+four rows at that time, preserving both transitions. Do not deduplicate on time alone.
 Normal samples are `regular`. Full owner/debris states before and after the
 attack are also retained in `result.attack_snapshots` in the MAT file.
 
@@ -327,6 +368,58 @@ N objects. `result.population_balance` and `max_global_balance_residual` include
 that jump, while per-segment residuals audit continuous propagation separately.
 `fragmentations.csv` reports masses and exact local changes. The event input is
 included in scenario identity and copied to `inputs/events.csv` on export.
+
+## Disabling satellites with the same schedule
+
+Use `event_type=disabling` in the same `<scenario>-events.csv` file. Set `count`
+to the positive whole number of satellites to disable. For example:
+
+```csv
+event_id,time_year,event_type,owner_id,shell,population,count
+fragment-001,0.25,fragmentation,attacked,10,S,1
+disable-001,0.5,disabling,attacked,10,S,100
+disable-002,0.5,disabling,generic,11,Su,20
+fragment-002,0.75,fragmentation,attacked,10,S,1
+disable-003,1,disabling,generic,29,S,1
+```
+
+This is the complete `examples/mixed-attacks/mixed-attacks.csv` scenario. Run it from the
+repository root in PowerShell:
+
+```powershell
+matlab -batch "addpath('extensions/attack'); r=opusattack.runScenario('extensions/attack/examples/mixed-attacks/mixed-attacks.csv',1); disp(r.disablings); disp(r.output_directory);"
+```
+
+Each disabling event subtracts `count` from the selected owner's S or Su and adds
+the same count to that owner's D in the selected shell. No N is added, and total
+object count and representative satellite mass are conserved at that instant.
+The disabled satellites do not undergo the normal active-retirement relocation
+or successful-disposal fraction. They have no launches, stationkeeping, active
+avoidance or further lifetime removal of their own. Existing D drag transports
+them downward; crossing the lowest shell boundary removes them from the model.
+Collisions may also remove D and generate N according to the original equations.
+Gravity alone is not the decay mechanism: the model uses atmospheric drag.
+
+The disabled objects interact with all owners through the existing active-D and
+D-D collision terms. S-S collision suppression does not suppress S-D interactions.
+Active operators retain the original MOCAT avoidance assumptions; this extension
+does not add individual maneuvers or attack-specific behavior profiles. Annual
+launch decisions use the remaining active owner counts, with the same timing
+rules as fragmentation. A target policy may therefore launch replacements.
+
+The default S, Su and D classes have matching physical properties (223 kg mass,
+1.741 square metres area and 1.490 metres diameter). Because a shared D class
+cannot preserve differing properties, configured disabling events are rejected
+if the targeted active class differs from D in mass, area, diameter or ballistic
+coefficient. Supporting heterogeneous disabled classes would require additional
+physics classes. Other scenarios are unaffected by this validation.
+
+Export schema version 3 adds `result.disablings` and `disablings.csv`. Both attack
+types also appear in `events.csv`, `flows.csv`, the participant table, full
+before/after snapshots and global population balances. Disabled objects merge
+into their owner's existing D count; the event ledger records their origin, but
+later D losses are not separately attributed to an attack cohort. Percentages
+are not interpreted by the scheduler: supply a number of satellites, not `20%`.
 
 ## Tests and upstream synchronization
 

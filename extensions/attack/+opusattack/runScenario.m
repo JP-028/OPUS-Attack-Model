@@ -1,5 +1,5 @@
 function result = runScenario(parameter_file, years, outputDirectory)
-% Annual owner decisions, shared physics, and one scheduled fragmentation event.
+% Annual owner decisions, shared physics, and scheduled attacks.
 % Default horizon: 1 year. Default export: extensions/attack/results/<unique run>.
 % Pass '' as outputDirectory for an in-memory run without file writes.
     if nargin<2, years=1; end
@@ -10,7 +10,7 @@ function result = runScenario(parameter_file, years, outputDirectory)
     end
     planned=scenario.attack.events;
     if any(planned.time_year>years)
-        error('OPUS:EventOutsideHorizon','The configured attack must lie within [0, %.15g] years.',years);
+        error('OPUS:EventOutsideHorizon','All configured attacks must lie within [0, %.15g] years.',years);
     end
     [V,costs]=prepareDynamics(scenario);
     owners=scenario.attack.owners;
@@ -29,6 +29,7 @@ function result = runScenario(parameter_file, years, outputDirectory)
     result.events=table;
     result.event_participants=table;
     result.fragmentations=emptyFragmentationLog();
+    result.disablings=emptyDisablingLog();
     result.attack_snapshots=cell(0,1);
     result.history=struct('T',[],'S',[],'D',[],'Su',[],'N',[],'total',[]);
     result.history.owners=struct('ids',{owners.ids},'S',[],'D',[],'Su',[]);
@@ -44,16 +45,31 @@ function result = runScenario(parameter_file, years, outputDirectory)
             event=table2struct(planned(j,:));
             snapshot=struct('time',a,'event_id',"attack:"+string(event.event_id), ...
                 'before',struct('owners',owners,'N',N));
-            [owners,N,report]=opusattack.applyFragmentation(owners,N,event,V);
+            switch string(event.event_type)
+                case "fragmentation"
+                    [owners,N,report]=opusattack.applyFragmentation(owners,N,event,V);
+                    result.fragmentations=[result.fragmentations;report];
+                    [flow,eventRecord,participants]=fragmentationTables(report);
+                case "disabling"
+                    [owners,N,report]=opusattack.applyDisabling(owners,N,event,V);
+                    result.disablings=[result.disablings;report];
+                    [flow,eventRecord,participants]=disablingTables(report);
+                otherwise
+                    error('OPUS:InvalidAttackEvents','Unsupported attack type: %s.',event.event_type);
+            end
             snapshot.after=struct('owners',owners,'N',N);
             result.attack_snapshots{end+1}=snapshot;
-            result.fragmentations=[result.fragmentations;report];
-            [flow,eventRecord,participants]=fragmentationTables(report);
             result.flows=[result.flows;flow];
             result.events=[result.events;eventRecord];
             result.event_participants=[result.event_participants;participants];
-            result.history.phase(end)="pre_event";
-            result.history.event_id(end)=report.log_event_id;
+            if result.history.phase(end)=="post_event"
+                % Preserve the previous simultaneous attack's post-event record.
+                result.history=appendState(result.history,a,snapshot.before.owners,snapshot.before.N, ...
+                    "pre_event",report.log_event_id);
+            else
+                result.history.phase(end)="pre_event";
+                result.history.event_id(end)=report.log_event_id;
+            end
             result.history=appendState(result.history,a,owners,N,"post_event",report.log_event_id);
             executed(j)=true;
         end
@@ -89,11 +105,14 @@ function result = runScenario(parameter_file, years, outputDirectory)
     result.final=struct('owners',owners,'N',N);
     result.population_balance=populationBalance(initialOwners,initialN,result.final,result.flows);
     result.max_global_balance_residual=max(abs(result.population_balance.residual));
-    result.metadata=struct('schema_version',2,'scenario_name',scenario.name, ...
+    result.metadata=struct('schema_version',3,'scenario_name',scenario.name, ...
         'years',years,'matlab_version',version,'created_utc',char(datetime('now','TimeZone','UTC')), ...
         'launch_default','current owner count divided by Dt', ...
         'collision_records','ordered expected flow contributions, not individual incidents', ...
-        'attacks_supported',true,'attack_scope','one fragmentation event destroying one active satellite', ...
+        'attacks_supported',true,'attack_scope','multiple fragmentation or disabling events', ...
+        'fragmentation_count','one active satellite per event', ...
+        'disabling_destination','same owner and shell in D; passive derelict dynamics', ...
+        'simultaneous_attack_order','CSV row order', ...
         'attack_timing','before annual decisions; midyear launches held until next annual decision', ...
         'relative_tolerance',1e-8,'absolute_tolerance',1e-8);
     result.max_balance_residual=max(cellfun(@(o)o.max_balance_residual,result.intervals));

@@ -8,7 +8,7 @@ function setupOnce(t)
     t.applyFixture(matlab.unittest.fixtures.PathFixture(ext));
     t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'MOCAT4S')));
     t.TestData.ext=ext;
-    t.TestData.file=fullfile(ext,'examples','fragmentation.csv');
+    t.TestData.file=fullfile(ext,'examples','fragmentation','fragmentation.csv');
     t.TestData.scenario=opusattack.prepareScenario(t.TestData.file);
     t.TestData.run=opusattack.runScenario(t.TestData.file,1,'');
 end
@@ -24,8 +24,8 @@ function [file,event,folder]=temporaryScenario(t,time)
     folder=tempname; mkdir(folder); t.addTeardown(@() rmdir(folder,'s'));
     file=fullfile(folder,'case.csv');
     copyfile(t.TestData.file,file);
-    copyfile(fullfile(t.TestData.ext,'examples','fragmentation-owners'),fullfile(folder,'case-owners'));
-    copyfile(fullfile(t.TestData.ext,'examples','fragmentation-launches.csv'),fullfile(folder,'case-launches.csv'));
+    copyfile(fullfile(t.TestData.ext,'examples','fragmentation','fragmentation-owners'),fullfile(folder,'case-owners'));
+    copyfile(fullfile(t.TestData.ext,'examples','fragmentation','fragmentation-launches.csv'),fullfile(folder,'case-launches.csv'));
     event=t.TestData.scenario.attack.events;
     event.time_year=time;
     writetable(event,fullfile(folder,'case-events.csv'));
@@ -138,20 +138,20 @@ function testTimeOutsideHorizonRejected(t)
     verifyFalse(t,isfolder(out));
 end
 
-function testMultipleSatellitesAndEventsRejected(t)
+function testMultipleSatellitesAndDuplicateEventIdsRejected(t)
     [file,event,folder]=temporaryScenario(t,0.5);
     o=t.TestData.scenario.attack.owners;
     event.count=2; writetable(event,fullfile(folder,'case-events.csv'));
     verifyError(t,@() opusattack.loadAttackEvents(file,o,40),'OPUS:UnsupportedAttackSize');
     event.count=1; writetable([event;event],fullfile(folder,'case-events.csv'));
-    verifyError(t,@() opusattack.loadAttackEvents(file,o,40),'OPUS:MultipleAttackEventsNotSupported');
+    verifyError(t,@() opusattack.loadAttackEvents(file,o,40),'OPUS:DuplicateAttackEventId');
 end
 
 function testInvalidEventFieldsRejected(t)
     [file,event,folder]=temporaryScenario(t,0.5);
     o=t.TestData.scenario.attack.owners;
     cases={ 'owner_id',"unknown"; 'shell',41; 'shell',1.5; 'time_year',-1; ...
-        'event_type',"disabling"; 'population',"D"; 'event_id',"invalid id"; 'time_year',NaN };
+        'event_type',"unknown"; 'population',"D"; 'event_id',"invalid id"; 'time_year',NaN };
     for i=1:size(cases,1)
         bad=event; bad.(cases{i,1})=cases{i,2};
         writetable(bad,fullfile(folder,'case-events.csv'));

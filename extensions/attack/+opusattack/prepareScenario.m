@@ -36,6 +36,10 @@ function scenario = prepareScenario(parameter_file, model_type)
         attack_params.owners = opusattack.loadOwners(parameter_file, VAR);
         attack_params.launch_rules = opusattack.loadLaunchRules(parameter_file, attack_params.owners, VAR.N_shell);
         attack_params.events = opusattack.loadAttackEvents(parameter_file, attack_params.owners, VAR.N_shell);
+        disabled=attack_params.events.event_type=="disabling";
+        for pop=unique(attack_params.events.population(disabled))'
+            validateDisablingPhysics(VAR,pop);
+        end
     end
     % Preserve the upstream naming inputs for disabled scenarios. Owner counts
     % participate in enabled scenario identities, without writing output folders.

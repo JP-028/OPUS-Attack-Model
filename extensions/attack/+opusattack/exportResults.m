@@ -24,6 +24,7 @@ function exportResults(result,folder)
     writetable(ownerHistory,fullfile(folder,'owner-populations.csv'));
     writetable(totals,fullfile(folder,'shell-populations.csv'));
     fields={'launch_decisions','flows','events','event_participants','source_manifest','fragmentations','population_balance'};
+    if isfield(result,'disablings'), fields{end+1}='disablings'; end
     for i=1:numel(fields)
         name=fields{i}; writetable(result.(name),fullfile(folder,[strrep(name,'_','-') '.csv']));
     end

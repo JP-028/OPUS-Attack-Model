@@ -1,11 +1,17 @@
 # CSV templates and accepted values
 
+Start with the [complete editing and running guide](SIMULATION_GUIDE.md) for a
+step-by-step workflow covering owners, attacks, parameters, PowerShell commands,
+results and troubleshooting. This README is the shorter field reference.
+The same guide is available as a [Word document](SIMULATION_GUIDE.docx).
+Edit the Markdown source when updating the guide, then refresh the Word copy.
+
 These templates are for the extension only. They do not change the original
 OPUS files. All input cells are filled with concrete example values; no guessing
 or replacement of placeholder words is needed to validate the supplied example.
 Owner-aware propagation, annual launch policies, accounting and result export are
-available (see the parent README), along with single-satellite fragmentation.
-Disabling, multiple attacks, time-varying launch schedules, and the PowerShell
+available (see the parent README), along with scheduled fragmentation and disabling
+events in a common CSV. Time-varying launch schedules and the PowerShell
 launcher are still future steps.
 
 ## Which file to edit
@@ -15,6 +21,7 @@ launcher are still future steps.
 | `owner-scenario.csv` | Opt-in and selected physical/economic parameters, filled with current defaults |
 | `owner-scenario-launches.csv` | Owner-specific launch policies, with targets and rate limits |
 | `single-satellite-events.csv` | Optional one-satellite fragmentation template; copy/rename to activate |
+| `attack-schedule-events.csv` | Optional mixed fragmentation/disabling schedule specifying times, owners and shells; copy/rename to activate |
 | `owner-scenario-owners/example-owner.csv` | Named constellation owner's initial counts in all 40 shells |
 | `owner-scenario-owners/generic-owner.csv` | Explicit remainder of the initial satellite population |
 | `field-reference.csv` | Spreadsheet-readable descriptions, types, units, and example values; not a simulation input |
@@ -124,25 +131,38 @@ slotted satellites to example-owner in shell 10, and 300 to generic-owner in
 shell 29. These are independent rules even when owners share a shell. Rules
 are recalculated annually from current counts; no behavior profiles are used.
 
-## Fragmentation event values
+## Attack event values: fragmentation and disabling
 
-For an attack, copy `single-satellite-events.csv` to `<scenario>-events.csv`
+For attacks, copy `attack-schedule-events.csv` (or `single-satellite-events.csv`
+for a one-row example) to `<scenario>-events.csv`
 beside the scenario parameter file (for example `owner-scenario-events.csv`).
 It is deliberately not loaded automatically under its template filename.
 
 | Event column | Allowed value | Example |
 | --- | --- | --- |
-| `event_id` | Nonempty ID with letters/digits/hyphens/underscores; first character alphanumeric | `fragment-001` |
+| `event_id` | Unique ID ignoring case; letters/digits/hyphens/underscores; first character alphanumeric | `fragment-001` |
 | `time_year` | Finite nonnegative simulation time, at or before the run's end | `0.5` |
-| `event_type` | Currently only `fragmentation` | `fragmentation` |
+| `event_type` | `fragmentation` or `disabling` | `disabling` |
 | `owner_id` | An existing owner ID | `example-owner` |
 | `shell` | Integer 1-40 on the default grid | `10` |
 | `population` | `S` or `Su` | `S` |
-| `count` | Exactly `1` in this version | `1` |
+| `count` | Exactly `1` for fragmentation; a positive integer for disabling | `100` for disabling |
 
-Only one data row is supported initially. There must still be at least one
-satellite of the targeted owner/population in that shell when the event executes.
+Add one row per attack. Rows are sorted by time; rows with the same time execute
+in CSV order. Times are elapsed simulation years, not calendar years. Shells
+are altitude bands; see `shell-reference.csv` for their default boundaries.
+Fragmentation destroys one satellite and generates standard N debris. Disabling
+moves the requested number from the owner's S or Su to the same owner's D in
+the same shell, without adding N or applying retirement disposal. The derelicts
+then follow passive drag and collision dynamics. There must still be enough
+satellites of the targeted owner/population in that shell when the event executes.
+All attacks at an annual decision time happen before that decision. Midyear
+attacks keep the already selected launch rates until the next annual decision.
 Use `runScenario` for configured events; `propagateScenario` rejects them.
+For disabling, active and D mass, area, diameter and ballistic coefficient must
+match (as they do in the defaults). Supply counts, not percentages. Both types
+can be mixed and share one unique event ID namespace. The complete runnable
+example is `../examples/mixed-attacks/mixed-attacks.csv`.
 
 ## Saving CSV files from Excel
 

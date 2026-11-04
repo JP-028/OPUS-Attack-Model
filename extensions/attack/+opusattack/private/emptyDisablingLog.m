@@ -1,0 +1,9 @@
+function log = emptyDisablingLog()
+    names={'event_id','log_event_id','time_year','owner_id','shell','population', ...
+        'requested_count','disabled_count','satellite_mass_kg','satellite_area_m2', ...
+        'satellite_diameter_m','active_before','active_after','D_before','D_after', ...
+        'N_before','N_after','transferred_mass_kg','mass_residual_kg','object_count_residual'};
+    types=repmat({'double'},1,numel(names));
+    types([1,2,4,6])={'string','string','string','string'};
+    log=table('Size',[0,numel(names)],'VariableTypes',types,'VariableNames',names);
+end

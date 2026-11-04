@@ -1,0 +1,7 @@
+event_id,time_year,event_type,owner_id,shell,population,count
+fragment-001,0.25,fragmentation,attacked,10,S,1
+disable-001,0.5,disabling,attacked,10,S,100
+disable-002,0.5,disabling,generic,11,Su,20
+fragment-002,0.75,fragmentation,attacked,10,S,1
+fragment-003,0.9,fragmentation,generic,11,Su,1
+disable-003,1,disabling,generic,29,S,1
