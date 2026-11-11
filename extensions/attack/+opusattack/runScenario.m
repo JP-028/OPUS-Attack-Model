@@ -1,16 +1,49 @@
-function result = runScenario(parameter_file, years, outputDirectory)
+function result = runScenario(parameter_file, years, outputDirectory, attackMode, attackedOwner)
 % Annual owner decisions, shared physics, and scheduled attacks.
 % Default horizon: 1 year. Default export: extensions/attack/results/<unique run>.
 % Pass '' as outputDirectory for an in-memory run without file writes.
+% Optional attackMode='none' keeps the event-time checkpoints but suppresses
+% attack transfers, for a matched no-attack control of the same scenario.
+% Optional attackedOwner selects only that owner's scheduled events. The input
+% schedule is still snapshotted, and metadata records the selection.
     if nargin<2, years=1; end
+    if nargin<4, attackMode="scheduled"; end
+    if nargin<5, attackedOwner=""; end
+    if ~isscalar(string(attackMode)) || ~ismember(string(attackMode),["scheduled","none"])
+        error('OPUS:InvalidAttackMode','Use scheduled or none for attackMode.');
+    end
+    attackMode=string(attackMode);
+    if ~isscalar(string(attackedOwner))
+        error('OPUS:InvalidAttackOwner','attackedOwner must be one owner ID or empty.');
+    end
+    attackedOwner=string(attackedOwner);
     validateattributes(years,{'numeric'},{'scalar','real','finite','positive'});
     scenario=opusattack.prepareScenario(parameter_file);
     if ~scenario.attack.enabled
         error('OPUS:AttackNotEnabled','Use the original OPUS workflow for non-opt-in scenarios.');
     end
-    planned=scenario.attack.events;
-    if any(planned.time_year>years)
+    configured=scenario.attack.events;
+    selected=configured;
+    if strlength(attackedOwner)>0
+        hit=find(strcmpi(scenario.attack.owners.ids,attackedOwner),1);
+        if isempty(hit)
+            error('OPUS:InvalidAttackOwner','Unknown attacked owner: %s.',attackedOwner);
+        end
+        attackedOwner=string(scenario.attack.owners.ids{hit});
+        selected=configured(configured.owner_id==attackedOwner,:);
+        if isempty(selected)
+            error('OPUS:NoAttacksForOwner','No scheduled attacks target %s.',attackedOwner);
+        end
+    end
+    if any(selected.time_year>years)
         error('OPUS:EventOutsideHorizon','All configured attacks must lie within [0, %.15g] years.',years);
+    end
+    planned=selected;
+    if attackMode=="none"
+        planned=selected([],:);
+    end
+    if attackMode=="none" || strlength(attackedOwner)>0
+        scenario.attack.events=planned;
     end
     [V,costs]=prepareDynamics(scenario);
     owners=scenario.attack.owners;
@@ -18,13 +51,16 @@ function result = runScenario(parameter_file, years, outputDirectory)
     initialOwners=owners; initialN=N;
     annualTimes=0:1:years;
     if annualTimes(end)<years, annualTimes(end+1)=years; end
-    times=unique([annualTimes,planned.time_year']);
+    times=unique([annualTimes,selected.time_year']);
     result.scenario=scenario;
     result.parameters=V;
     result.cost_parameters=costs;
     result.input_files=snapshotInputs(parameter_file);
     result.intervals=cell(numel(times)-1,1);
     result.launch_decisions=table;
+    result.economic_decisions=table;
+    result.owner_economics=table;
+    result.attack_economics=table;
     result.flows=table;
     result.events=table;
     result.event_participants=table;
@@ -59,6 +95,9 @@ function result = runScenario(parameter_file, years, outputDirectory)
             end
             snapshot.after=struct('owners',owners,'N',N);
             result.attack_snapshots{end+1}=snapshot;
+            economics=attackEconomics(report,snapshot.before.owners, ...
+                scenario.econ_params,costs,scenario.attack.owner_economics);
+            result.attack_economics=[result.attack_economics;economics];
             result.flows=[result.flows;flow];
             result.events=[result.events;eventRecord];
             result.event_participants=[result.event_participants;participants];
@@ -78,6 +117,14 @@ function result = runScenario(parameter_file, years, outputDirectory)
         if ismember(a,annualTimes)
             nextAnnual=annualTimes(find(annualTimes>a,1));
             [launches,decisions]=opusattack.ownerLaunches(owners,scenario.attack.launch_rules,V,nextAnnual-a);
+            [launches,economicDecisions]=economicLaunches(owners,N,launches,decisions, ...
+                V,scenario.econ_params,costs,scenario.attack.owner_economics,nextAnnual-a);
+            if ~isempty(economicDecisions)
+                economicDecisions.start_time=repmat(a,height(economicDecisions),1);
+                economicDecisions.end_time=repmat(nextAnnual,height(economicDecisions),1);
+            end
+            result.economic_decisions=[result.economic_decisions;economicDecisions];
+            decisions.launch_rate=economicLaunchRate(decisions,launches,owners.ids);
             decisions.start_time=repmat(a,height(decisions),1);
             decisions.end_time=repmat(nextAnnual,height(decisions),1);
             result.launch_decisions=[result.launch_decisions;decisions];
@@ -86,6 +133,8 @@ function result = runScenario(parameter_file, years, outputDirectory)
         OUT=opusattack.propagateOwners(linspace(a,b,max(3,V.N_step)),owners,N,launches,V);
         result.intervals{period}=OUT;
         [flows,events,participants]=flowTables(OUT,a,b,height(result.events));
+        result.owner_economics=[result.owner_economics;economicInterval(OUT,flows, ...
+            a,b,scenario.econ_params,costs,scenario.attack.owner_economics)];
         result.flows=[result.flows;flows];
         result.events=[result.events;events];
         result.event_participants=[result.event_participants;participants];
@@ -105,7 +154,7 @@ function result = runScenario(parameter_file, years, outputDirectory)
     result.final=struct('owners',owners,'N',N);
     result.population_balance=populationBalance(initialOwners,initialN,result.final,result.flows);
     result.max_global_balance_residual=max(abs(result.population_balance.residual));
-    result.metadata=struct('schema_version',3,'scenario_name',scenario.name, ...
+    result.metadata=struct('schema_version',4,'scenario_name',scenario.name, ...
         'years',years,'matlab_version',version,'created_utc',char(datetime('now','TimeZone','UTC')), ...
         'launch_default','current owner count divided by Dt', ...
         'collision_records','ordered expected flow contributions, not individual incidents', ...
@@ -114,7 +163,22 @@ function result = runScenario(parameter_file, years, outputDirectory)
         'disabling_destination','same owner and shell in D; passive derelict dynamics', ...
         'simultaneous_attack_order','CSV row order', ...
         'attack_timing','before annual decisions; midyear launches held until next annual decision', ...
+        'economic_launch_mode','optional bounded owner best responses with shared OPUS linear fringe revenue', ...
+        'economic_collision_risk','per-satellite hazard from original MOCAT loss terms', ...
+        'cash_flow_proxy','modeled revenue minus launch spending; excludes other operating costs', ...
         'relative_tolerance',1e-8,'absolute_tolerance',1e-8);
+    result.metadata.attack_mode=char(attackMode);
+    result.metadata.source_event_count=height(configured);
+    result.metadata.configured_event_count=height(selected);
+    result.metadata.applied_event_count=height(planned);
+    result.metadata.selected_attacked_owner=char(attackedOwner);
+    result.metadata.control_uses_event_checkpoints=true;
+    result.metadata.initial_population_mode='original_allocation';
+    if isfield(scenario.attack,'additional_constellations') && scenario.attack.additional_constellations
+        result.metadata.initial_population_mode='additional_constellations';
+        result.metadata.generic_owner_id='generic';
+    end
+    result.metadata.initial_debris_source='upstream VAR.x0 N';
     result.max_balance_residual=max(cellfun(@(o)o.max_balance_residual,result.intervals));
     result.source_manifest=sourceManifest();
     if nargin<3
@@ -139,6 +203,8 @@ function inputs=snapshotInputs(parameter_file)
     end
     launchFile=fullfile(parent,[stem '-launches.csv']);
     if isfile(launchFile), paths{end+1}=launchFile; names{end+1}='launches.csv'; end
+    economicsFile=fullfile(parent,[stem '-economics.csv']);
+    if isfile(economicsFile), paths{end+1}=economicsFile; names{end+1}='economics.csv'; end
     eventFile=fullfile(parent,[stem '-events.csv']);
     if isfile(eventFile), paths{end+1}=eventFile; names{end+1}='events.csv'; end
     inputs=struct('path',paths,'snapshot_name',names,'contents',cell(size(paths)));

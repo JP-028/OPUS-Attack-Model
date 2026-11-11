@@ -1,11 +1,17 @@
-function owners = loadOwners(parameter_file, VAR, x0)
+function [owners, initialState] = loadOwners(parameter_file, VAR, x0, populationMode)
 % Load one CSV per owner from <parameter-file-stem>-owners beside the parset.
 % Each CSV has shell,S,Su,D columns and exactly one row for every shell.
 % The filename (without .csv) is the owner ID. No ownership is inferred.
-% Returns shell-by-owner matrices; their sums must match the MOCAT state.
+% Default 'allocation' requires sums to match the MOCAT state. 'additional'
+% adds owner CSV populations to the input S/Su/D, assigned to automatic generic.
+% Shared N is retained once. The additional mode reserves the ID 'generic'.
     n = VAR.N_shell;
     if nargin < 3
         x0 = VAR.x0;
+    end
+    if nargin < 4, populationMode = 'allocation'; end
+    if ~isscalar(string(populationMode)) || ~ismember(string(populationMode), ["allocation","additional"])
+        error('OPUS:InvalidOwnerPopulationMode','Use allocation or additional owner population mode.');
     end
     if ~isnumeric(x0) || ~isvector(x0) || numel(x0) ~= 4*n || ...
             any(~isfinite(x0(:))) || any(x0(:) < 0)
@@ -15,7 +21,7 @@ function owners = loadOwners(parameter_file, VAR, x0)
     folder = fullfile(parent, [stem '-owners']);
     files = dir(fullfile(folder, '*.csv'));
     files = files(~[files.isdir]);
-    if isempty(files)
+    if isempty(files) && ~(string(populationMode)=="additional" && isfolder(folder))
         error('OPUS:MissingOwnerFiles', 'Add one owner CSV per owner in %s.', folder);
     end
     [~, order] = sort({files.name});
@@ -52,8 +58,25 @@ function owners = loadOwners(parameter_file, VAR, x0)
         owners.D(data.shell, i) = data.D;
     end
     x0 = x0(:);
+    if string(populationMode)=="additional"
+        if any(strcmpi(owners.ids,'generic'))
+            error('OPUS:ReservedGenericOwner', ...
+                'Additional mode creates generic from the original population. Remove generic.csv or use a different ID for a genuinely additional owner.');
+        end
+        owners.ids{end+1}='generic';
+        owners.S(:,end+1)=x0(1:n);
+        owners.Su(:,end+1)=x0(3*n+1:4*n);
+        owners.D(:,end+1)=x0(n+1:2*n);
+        [owners.ids,order]=sort(owners.ids);
+        owners.S=owners.S(:,order); owners.Su=owners.Su(:,order); owners.D=owners.D(:,order);
+    end
     expected = [x0(1:n), x0(3*n+1:4*n), x0(n+1:2*n)];
     actual = [sum(owners.S, 2), sum(owners.Su, 2), sum(owners.D, 2)];
+    if any(~isfinite(actual(:)))
+        error('OPUS:InvalidOwnerCounts','Summed owner populations must be finite.');
+    end
+    initialState = [actual(:,1);actual(:,3);x0(2*n+1:3*n);actual(:,2)];
+    if string(populationMode)=="additional", return; end
     tolerance = 1e-9 * max(1, abs(expected));
     [shell, species] = find(abs(actual - expected) > tolerance, 1);
     if ~isempty(shell)

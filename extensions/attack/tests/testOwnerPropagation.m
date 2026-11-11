@@ -77,6 +77,15 @@ function testSplittingOwnerPreservesTotalsAndThirtyPercentShare(t)
         values = b.owners.(field{1});
         verifyEqual(t,values(:,:,1),0.3*b.(field{1}),'AbsTol',1e-7,'RelTol',1e-7);
     end
+    % The same 30% share applies to expected collision losses, including
+    % active damage, destruction and active-active loss channels.
+    f=b.flow_definition; q=b.cumulative_flows(end,:)';
+    loss=ismember(f.process,{'collision_damage','collision_destruction','active_collision_loss'});
+    for pop={'S','Su'}
+        eligible=loss & strcmp(f.population,pop{1});
+        owned=eligible & strcmp(f.owner_id,'owner-a');
+        verifyEqual(t,sum(q(owned)),0.3*sum(q(eligible)),'AbsTol',1e-7,'RelTol',1e-7);
+    end
 end
 
 function [o,launch,V] = emptyState(t)

@@ -64,6 +64,7 @@ The resulting structure must be:
 my-study/
   my-study.csv
   my-study-launches.csv
+  my-study-economics.csv     # optional owner cost multipliers
   my-study-events.csv
   my-study-owners/
     example-owner.csv
@@ -86,6 +87,7 @@ Do not mix these IDs when copying event or launch rows between the two.
 | `my-study.csv` | Opt-in switch and shared model parameters |
 | `my-study-owners/*.csv` | Initial owner counts per shell |
 | `my-study-launches.csv` | Launch policies for owner/shell/population combinations |
+| `my-study-economics.csv` | Optional owner-specific deployment-cost multipliers; omit for all multipliers 1 |
 | `my-study-events.csv` | Attack time, type, owner, shell, active population and count |
 
 Keep references, backups, and unused owner CSVs outside `my-study-owners/`.
@@ -126,7 +128,7 @@ percentage, behavior, or explanatory columns. N debris is shared across owners.
 
 ### Reallocate satellites between the two owners
 
-For every shell and for S, Su and D separately, the sum across owners must match
+In the default allocation mode, for every shell and for S, Su and D separately, the sum across owners must match
 the original initial population. Editing ownership does not create new satellites.
 The supplied template has these shell-10 counts:
 
@@ -184,6 +186,88 @@ without changing those entries would double-count satellites. Add launch rules
 where needed. All owners interact through the same shell populations even
 though their counts and flows are recorded separately.
 
+### Additional constellations on top of the original population
+
+For independent starting sizes, copy the entire
+`extensions/attack/examples/additional-constellations/` folder to your study folder.
+Its scenario CSV contains:
+
+```csv
+parameter_type,parameter_name,parameter_value
+attack,enabled,1
+attack,additional_constellations,1
+```
+
+In this mode each CSV in `<scenario>-owners/` defines one additional owner's
+initial S, Su and D in every shell. Add as many owner files as needed; there is
+no fixed owner limit. The example adds Starlink Gen 1 (1,584 S in shell 10 and
+2,824 S in shell 11) and Kuiper Gen 1 / Amazon Leo (2,076 S in shell 12 and
+1,156 S in shell 13). These are published fully deployed design counts mapped
+to OPUS shells; see the [primary-source register](../examples/additional-constellations/SOURCES.md).
+
+The original S, Su and D are automatically assigned to `generic`. Original
+debris N is retained once as shared debris. Do not put `generic.csv` in this
+owner directory: the ID is reserved in additional mode, ignoring case. Keep
+backups and inactive owner CSVs outside the folder, since every CSV is loaded.
+An existing empty owner directory creates a generic-only control. A missing
+directory is an error. New owner files must still have all 40 shell rows and
+finite nonnegative counts; initial D is allowed and remains with its owner.
+
+The aggregate starting state is original background plus all additional owner
+counts. Unlike allocation mode, do not subtract additional counts from generic.
+Ensure the new satellites are actually additional: adding an entire real-world
+constellation could double count spacecraft already in the original background.
+
+All owners have separate histories, launches, retirements and collision losses.
+They share the same debris and collision environment and the same physical
+properties for each species. Default suppression of slotted-slotted collisions
+still applies; D is passive and does not receive slotted protection. This is
+one coupled physical simulation, not independent environments. The example
+uses the same current-count/lifetime replacement launch rule for `generic`,
+Starlink and Kuiper. Shared OPUS economic assumptions produce owner-specific
+revenue and spending reports, but do not change launches in this example.
+Owner-specific economic launch decisions remain an optional mode for other
+scenarios. Behavior profiles remain unimplemented.
+
+Within one shell and population, owners have equal modeled collision exposure.
+At a given state their expected losses are proportional to their counts: if
+the modeled loss is 30% of that shell population, each owner loses 30% of its
+count there in expectation. This is a continuous population calculation, so
+the reported counts may be fractional;
+it is not a draw of individual destroyed satellites.
+
+Configure each owner's launch rules and events using its filename as the ID.
+Use `generic` in launch/event rows to target the automatic background owner.
+Unlisted launch rows use current count divided by lifetime; this replacement
+rule does not automatically replenish attack losses. Midyear attacks do not
+recalculate launch rates until the next annual decision.
+
+```powershell
+matlab -batch "addpath('extensions/attack'); f='extensions/attack/examples/additional-constellations/additional-constellations.csv'; a=opusattack.runPairedScenarios(f,2,[],'starlink-gen1'); b=opusattack.runPairedScenarios(f,2,[],'kuiper-gen1'); disp(a.output_directory); disp(b.output_directory);"
+```
+
+The example schedules one fragmentation at year 0.25 and one disabling at year
+0.5 for **each** owner. The optional fourth argument selects the events for
+Starlink or Kuiper; thus each pair compares the same attack types and timing
+against its own no-attack control. The paired runner executes the selected
+scenario twice: the attacked run and a no-attack control.
+The control keeps the event-time integration checkpoints and all other inputs.
+Results appear together under `attacked/` and `control/`; `owner-impact.csv`,
+`owner-shell-impact.csv` and `debris-impact.csv` report attacked-minus-control
+differences. Omitting the fourth argument executes all four events as one
+combined attack scenario. To isolate only fragmentation or only disabling,
+copy the folder and leave only that event type in its `-events.csv`.
+Use at least two years to observe the next annual launch decision after the
+midyear attacks. A one-year run records the direct attack and physical effects
+but ends before that decision can change launches.
+Metadata records `initial_population_mode=additional_constellations`. Generic's
+initial counts are saved in the first owner-history sample and MAT state;
+input owner CSV snapshots contain only the additional files read from disk.
+Original background file hashes are included in the source manifest.
+
+Omitting `additional_constellations`, or setting it to 0, restores strict
+allocation mode. Setting `enabled` to 0 disables extension setup entirely.
+
 ## 4. Choose shells
 
 Use the shell index, not the altitude in kilometres, in every CSV. The default
@@ -215,6 +299,7 @@ fields must be finite and nonnegative, including when a field is unused.
 | `replacement` | Smaller of the rate cap and current active count / `Dt` | Set target to 0 |
 | `fixed` | Exactly the configured rate cap | Set target to 0 |
 | `none` | Zero | Set both numbers to 0 |
+| `economic` | Bounded launch rate where the owner's projected excess return is driven toward zero | Set target to 0 and a finite cap |
 
 Decisions normally occur at years 0, 1, 2, etc., and use each owner's current
 active count. A final partial year uses its shorter decision interval for target
@@ -229,8 +314,57 @@ for an owner everywhere, supply `none,0,0` rules for both S and Su in every shel
 A target policy may increase launches after attacks by trying to fill the larger
 shortfall. A replacement policy uses the remaining active count, so its rate may
 decrease after attacks. These are mathematical rules, not implemented cautious
-or fearless behavior profiles. Profiles and independent economic optimization
-are still future work.
+or fearless behavior profiles.
+
+### Economic launch decisions and owner costs
+
+The Starlink/Kuiper example **does not select `economic` launch mode**. Its
+header-only launch CSV gives every owner the same OPUS-style replacement rule,
+while `owner-economics.csv` still reports each owner's modeled economic
+results. This combines common A-style launches with C-style economic
+accounting without using the extension's new S collision-risk return to
+control launches. No owner-specific cost file is used in that example.
+
+`economic` is opt-in per owner, shell and active population (`S` or `Su`). For
+example, add this row to the launch file of a copied Starlink scenario:
+
+```csv
+starlink-gen1,10,S,economic,0,500
+```
+
+`500` is a **scenario cap** in satellites/year, not an observed Starlink rate.
+Every other owner/shell/population retains its configured target, replacement,
+fixed or none rule. Unlisted entries still use uncapped replacement.
+Economic rates are selected at annual boundaries and held through midyear
+attacks until the next decision. The solver projects one decision interval with
+the combined MOCAT state, changes each economic owner's bounded rate in turn,
+and repeats until the joint rates settle. It stops with an error if they do
+not converge; it does not silently use an unfinished answer.
+
+The shared OPUS annual revenue rule is `intercept - coef * sum(Su across all
+owners and shells)`. OPUS's shell cost function, discount rate and lifetime
+enter each candidate's return, with collision exposure from the combined
+physical populations. We use a per-satellite collision hazard derived from
+MOCAT's active loss terms; this handles empty shells and applies to S as well
+as Su. Original OPUS optimizes aggregate Su launches, so using the shared
+fringe revenue formula for S owners is an explicit extension assumption.
+The original linear formula is not capped at zero. With default inputs it
+becomes negative above 7,500 total Su, so do not interpret such extrapolations
+as measured company revenue.
+
+Optionally create `<scenario>-economics.csv` beside the other inputs:
+
+```csv
+owner_id,cost_multiplier
+starlink-gen1,1.2
+```
+
+The multiplier scales the original shell deployment cost for that owner.
+It must be finite and greater than zero. Unlisted owners use 1. This lets
+owners face different assumed costs without changing the original OPUS files;
+the multiplier is **not a company cost estimate** unless you provide a
+separately sourced value. Revenue intercept, slope, discount and tax remain
+shared scenario parameters.
 
 ## 6. Schedule fragmentation and disabling
 
@@ -324,6 +458,7 @@ so check the loaded values rather than relying on a misspelled row to error.
 | Setting | Meaning and editing guidance |
 | --- | --- |
 | `attack,enabled` | Use 1 for this runner, including owner-aware controls. Setting 0 disables extension setup; `runScenario` then rejects the run rather than launching original OPUS automatically. |
+| `attack,additional_constellations` | Use 1 to add owner CSV populations to automatic generic background. Omit or use 0 for allocation of the original population. Requires enabled=1. |
 | `MOCAT,Dt` | Positive mean operating lifetime in years. Active retirement and replacement rates use this; retirement is continuous, not removal of every satellite exactly at this age. |
 | `econ,satLifetime` | Economic lifetime; keep equal to `Dt`. |
 | `MOCAT,P` | Keep 0 initially. In the population equations P is the fraction removed on retirement; 1-P becomes D with retirement relocation. Upstream comments label it inconsistently. It does not apply to disabling transfers. |
@@ -335,12 +470,11 @@ so check the loaded values rather than relying on a misspelled row to error.
 | `econ,delta_v_cost` | Upstream delta-v cost coefficient; template 1000. |
 | `econ,lift_price` | Lift cost per kg; template 5000. |
 
-The economic entries are accepted as shared upstream settings and saved in the
-scenario. `runScenario` builds upstream cost parameters and uses their disposal
-shell, but owner launches follow the launch CSV. Changing a revenue coefficient,
-tax or discount rate does not trigger profit optimization or automatically
-change these launch rules. Some economic settings only affect stored parameters
-or cost calculations in this runner. They are not per-owner economic choices.
+The economic entries are shared upstream settings. `runScenario` builds
+upstream costs and uses their disposal shell. Revenue, tax and discount
+affect launch decisions only where the launch CSV selects `economic`; other
+launch rules keep their prescribed behavior. The optional owner cost
+multiplier is a separate extension input.
 
 To test a longer lifetime, for example, change both `MOCAT,Dt` and
 `econ,satLifetime` from 5 to 7. This changes retirement and replacement behavior.
@@ -382,6 +516,23 @@ From the repository root, run five years and export:
 ```powershell
 matlab -batch "addpath('extensions/attack'); r=opusattack.runScenario('extensions/attack/scenarios/my-study/my-study.csv',5); disp(r.output_directory); disp(r.fragmentations); disp(r.disablings);"
 ```
+
+For an attacked run and its matched no-attack control, use the same scenario
+file with the paired runner:
+
+```powershell
+matlab -batch "addpath('extensions/attack'); p=opusattack.runPairedScenarios('extensions/attack/scenarios/my-study/my-study.csv',5); disp(p.output_directory);"
+```
+
+This is the recommended workflow for measuring modeled attack impact. It keeps
+the original event CSV as an input snapshot for both runs, but the control's
+`metadata.json` records `attack_mode=none` and `applied_event_count=0`. The
+control uses the event dates as integration checkpoints without applying the
+attacks. All owner launch rules and economic inputs are otherwise identical.
+If the event CSV targets multiple owners, pass one owner ID as the fourth
+argument to compare only that owner's scheduled events; use `[]` as the third
+argument to retain automatic output naming. Omitting the fourth argument
+compares the full attack schedule with one no-attack control.
 
 The horizon must be positive and include every scheduled event. Decimals such
 as `1.5` are allowed. Larger horizons require more calculation and produce more
@@ -429,6 +580,9 @@ directory as a completed result.
 | `owner-populations.csv` | Every owner's S, Su and D history in every shell |
 | `shell-populations.csv` | Combined S, Su, D, N and total population history per shell |
 | `launch-decisions.csv` | Each owner's selected rates and current counts at decisions |
+| `economic-decisions.csv` | Economic-mode launch rates, projected shared revenue, collision risk, owner cost and excess return |
+| `owner-economics.csv` | Modeled revenue, launch spending, collision losses and discounted cash-flow proxy per owner/shell/interval |
+| `attack-economics.csv` | Attacked owner's nominal replacement-cost reference and shared market revenue at the event |
 | `events.csv` | Scheduled attacks and major interval summaries such as launches and collision losses |
 | `event-participants.csv` | Known owners and roles linked to event IDs |
 | `flows.csv` | Integrated flow accounting, including retirement, drag and boundary exits |
@@ -437,6 +591,22 @@ directory as a completed result.
 | `metadata.json`, `source-manifest.csv` | Run settings and source/input dependency hashes |
 | `inputs/` | Snapshots of the inputs actually used |
 | `result.mat` | Full result structure, histories, counters, snapshots and parameters |
+
+For `runPairedScenarios`, the printed directory is the **pair root**. Open
+`attacked/` and `control/` inside it for the full files listed above. At the
+pair root, `owner-impact.csv` gives final active and derelict differences,
+launches, collision losses, modeled revenue, spending and cash-flow differences
+for every owner. `owner-shell-impact.csv` breaks selected final counts and
+economic differences down by owner and shell; `debris-impact.csv` gives the
+shared N difference by shell. All deltas mean attacked minus control. The
+pair root has its own `metadata.json` and `COMPLETE.txt`.
+
+`cash_flow_proxy = modeled_revenue - launch_spending`. It excludes other
+operating costs, and is not company profit. Collision asset value and attack
+replacement cost are shown separately so they are not double counted as
+realized payments. To measure attack impact, compare each attacked run with an
+otherwise identical no-attack control and report the difference. These
+economic numbers inherit OPUS's stylized common revenue and cost assumptions.
 
 The filename is **`result.mat`**, singular. Open it in MATLAB with a path to
 the desired run, for example while `r` is still available:
@@ -481,7 +651,7 @@ jump; original downstream collision equations are not a global material balance.
 | Incompatible disabling physics | The targeted active and D physical classes must match; use defaults until heterogeneous classes are implemented. |
 | Invalid disposal shell | Return disposalTime to the supplied default and review any physical changes. |
 | No launches after editing rules | Check `none`, caps, and target shortfall; unlisted combinations instead use replacement. |
-| Economic edits do not change launch rates | Rates come from owner launch rules; independent economic optimization is not implemented. |
+| Economic edits do not change a prescribed launch rate | Check whether that owner/shell row uses `economic`; target, replacement, fixed and none follow their own rules. |
 | No attack appears | Check that the events file has the matching scenario stem, contains rows, was saved, and that you opened the newest output folder. |
 | Output directory already exists | Choose a new folder or omit the third argument for a unique automatic output. |
 

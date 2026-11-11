@@ -1,0 +1,5 @@
+event_id,time_year,event_type,owner_id,shell,population,count
+fragment-starlink,0.25,fragmentation,starlink-gen1,10,S,1
+fragment-kuiper,0.25,fragmentation,kuiper-gen1,12,S,1
+disable-starlink,0.5,disabling,starlink-gen1,10,S,1
+disable-kuiper,0.5,disabling,kuiper-gen1,12,S,1

@@ -1,5 +1,12 @@
 function [VAR,costs] = prepareDynamics(scenario)
     VAR=scenario.VAR;
+    econ=scenario.econ_params;
+    for field={'satLifetime','disposalTime'}
+        validateattributes(econ.(field{1}),{'numeric'},{'scalar','real','finite','positive'});
+    end
+    for field={'discountRate','intercept','coef','tax','delta_v_cost','lift_price'}
+        validateattributes(econ.(field{1}),{'numeric'},{'scalar','real','finite','nonnegative'});
+    end
     extensionRoot=fileparts(fileparts(fileparts(mfilename('fullpath'))));
     opusRoot=fileparts(fileparts(extensionRoot));
     oldPath=path; cleanup=onCleanup(@() path(oldPath)); %#ok<NASGU>
@@ -12,5 +19,8 @@ function [VAR,costs] = prepareDynamics(scenario)
         error('OPUS:InvalidOwnerPhysics','Disposal time does not define a valid disposal shell.');
     end
     costs=buildCostFunction(VAR,scenario.econ_params);
+    if any(~isfinite(costs.cost)) || any(costs.cost<=0)
+        error('OPUS:InvalidOwnerEconomics','Original shell deployment costs must be finite and positive.');
+    end
     VAR.k_star=costs.k_star;
 end

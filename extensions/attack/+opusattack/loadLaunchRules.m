@@ -11,6 +11,10 @@ function rules = loadLaunchRules(parameter_file, owners, n)
     if ~isequal(sort(rules.Properties.VariableNames),sort(names))
         error('OPUS:InvalidLaunchRules','Launch CSV must have owner_id,shell,population,mode,target_size,max_launch_rate columns.');
     end
+    if height(rules)==0
+        rules=table('Size',[0,6],'VariableTypes',{'string','double','string','string','double','double'},'VariableNames',names);
+        return
+    end
     rules=rules(:,names);
     for field={'shell','target_size','max_launch_rate'}
         x=rules.(field{1});
@@ -20,7 +24,7 @@ function rules = loadLaunchRules(parameter_file, owners, n)
     end
     if any(rules.shell<1 | rules.shell>n | rules.shell~=fix(rules.shell)) || ...
             any(~ismember(rules.population,["S","Su"])) || ...
-            any(~ismember(rules.mode,["target","replacement","fixed","none"])) || ...
+            any(~ismember(rules.mode,["target","replacement","fixed","none","economic"])) || ...
             any(~ismember(lower(rules.owner_id),lower(string(owners.ids))))
         error('OPUS:InvalidLaunchRules','Unknown owner, shell, population, or launch mode.');
     end

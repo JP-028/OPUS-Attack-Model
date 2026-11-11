@@ -33,8 +33,13 @@ function scenario = prepareScenario(parameter_file, model_type)
     [VAR, econ_params, constellation_params, attack_params] = ...
         opusattack.modifyParameters(VAR, econ_params, constellation_params, parameter_file);
     if attack_params.enabled
-        attack_params.owners = opusattack.loadOwners(parameter_file, VAR);
+        if isfield(attack_params,'additional_constellations') && attack_params.additional_constellations
+            [attack_params.owners, VAR.x0] = opusattack.loadOwners(parameter_file, VAR, VAR.x0, 'additional');
+        else
+            attack_params.owners = opusattack.loadOwners(parameter_file, VAR);
+        end
         attack_params.launch_rules = opusattack.loadLaunchRules(parameter_file, attack_params.owners, VAR.N_shell);
+        attack_params.owner_economics = opusattack.loadOwnerEconomics(parameter_file, attack_params.owners);
         attack_params.events = opusattack.loadAttackEvents(parameter_file, attack_params.owners, VAR.N_shell);
         disabled=attack_params.events.event_type=="disabling";
         for pop=unique(attack_params.events.population(disabled))'
@@ -49,6 +54,11 @@ function scenario = prepareScenario(parameter_file, model_type)
     if attack_params.enabled
         identity = attack_params;
         identity.launch_rules = table2struct(identity.launch_rules);
+        if all(identity.owner_economics.cost_multiplier==1)
+            identity=rmfield(identity,'owner_economics'); % Existing scenario identities stay stable.
+        else
+            identity.owner_economics=table2struct(identity.owner_economics);
+        end
         if isempty(identity.events)
             identity=rmfield(identity,'events'); % Preserve existing no-event scenario identities.
         else

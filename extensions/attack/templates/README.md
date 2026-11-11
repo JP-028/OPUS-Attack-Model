@@ -20,6 +20,7 @@ launcher are still future steps.
 | --- | --- |
 | `owner-scenario.csv` | Opt-in and selected physical/economic parameters, filled with current defaults |
 | `owner-scenario-launches.csv` | Owner-specific launch policies, with targets and rate limits |
+| `<scenario>-economics.csv` | Optional owner ID and deployment-cost multiplier; create beside the scenario CSV |
 | `single-satellite-events.csv` | Optional one-satellite fragmentation template; copy/rename to activate |
 | `attack-schedule-events.csv` | Optional mixed fragmentation/disabling schedule specifying times, owners and shells; copy/rename to activate |
 | `owner-scenario-owners/example-owner.csv` | Named constellation owner's initial counts in all 40 shells |
@@ -57,6 +58,16 @@ The default shells are 35 km thick from 200 to 1600 km. Shell 10 spans
 to the current default grid, not to a future changed grid.
 
 ## A complete matching owner allocation
+
+The allocation instructions below are the default mode. To add new constellations
+of arbitrary sizes instead, use `attack,additional_constellations,1` alongside
+`attack,enabled,1`. Owner CSVs then contain additional satellites; the original
+population is created automatically as `generic`, and shared N is retained once.
+Do not include a generic CSV in additional mode. Copy the complete
+[additional-constellations example](../examples/additional-constellations/) as
+the template for this mode; it contains Starlink and Kuiper owners but accepts
+any number. Use its paired runner to generate a matching no-attack control.
+See the guide's new section on additional constellations for details.
 
 The supplied example uses the existing populations and adds no satellites:
 
@@ -109,7 +120,10 @@ The template intentionally omits shell geometry, vector-valued physical properti
 and `constellation` rows. Owner launch policies use the separate launches CSV;
 the parameter adapter does not process `constellation` rows. Changing physical inputs that
 require rebuilding derived matrices is also not supported by this template.
-The included economic values are upstream defaults, not owner-specific decisions.
+The included economic values are shared upstream defaults. The optional
+`economic` launch mode uses them for owner-specific decisions. A separate
+`<scenario>-economics.csv` may specify `owner_id,cost_multiplier`; omitted
+owners retain multiplier 1. Cost multipliers are scenario assumptions.
 
 ## Launch policy values
 
@@ -124,6 +138,7 @@ nonnegative numbers; target size is satellites, rate is satellites/year.
 | `replacement` | Current count divided by lifetime, capped by the rate | `0` | `500` |
 | `fixed` | Prescribed rate regardless of current count | `0` | `100` |
 | `none` | No launches | `0` | `0` |
+| `economic` | Bounded owner response to projected return in the shared market | `0` | `500` (scenario assumption) |
 
 Unlisted owner/shell/population combinations use uncapped replacement. This
 also applies if no launches file exists. The example assigns a target of 3000

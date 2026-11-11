@@ -22,6 +22,7 @@ function [launches,decisions] = ownerLaunches(owners,rules,VAR,intervalYears)
                         case "replacement", rate=min(cap,current/VAR.Dt);
                         case "fixed", rate=cap;
                         case "none", rate=0;
+                        case "economic", rate=0; % Solved using shared physics after fixed rules.
                     end
                 end
                 launches.(species)(k,i)=rate;

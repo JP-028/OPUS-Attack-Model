@@ -12,20 +12,27 @@ directory itself. The package does not override the names of upstream functions.
 
 - Scenario-specific opt-in, disabled by default.
 - One CSV per owner specifying initial active and derelict satellite counts by shell.
-- Validation against the original MOCAT initial S, Su and D populations.
+- Default validation against the original MOCAT initial S, Su and D populations.
+- Optional additional constellations of arbitrary sizes, with automatic generic background.
 - Scenario naming that includes owner allocations when enabled.
 - Owner-specific S, Su and D propagation through the shared MOCAT environment,
   with shared debris N and constant owner-specific launch rates.
 - Annual owner-specific target, replacement, fixed-rate or no-launch decisions.
+- Optional owner-specific `economic` launch rules using the shared OPUS fringe
+  revenue formula, original shell cost function and shared collision environment.
+- Per-owner revenue, launch spending, collision-loss and nominal attack-cost
+  exports; optional cost multipliers in a separate owner-economics CSV.
+- Paired attacked/no-attack runs with identical inputs and event-time
+  checkpoints, plus owner and debris difference summaries.
 - Integrated expected flow accounting, attributed interval event records and exports.
 - Multiple scheduled fragmentation events, each destroying exactly one active
   satellite of a selected owner and adding standard debris to N in the same shell.
 - Scheduled disabling events transferring a chosen number of active satellites
   to the same owner's D population in the same shell, using the same event CSV.
 
-Bulk destruction within one event, time-varying launch schedules and independent
-owner economic equilibrium decisions are not implemented yet. Behavior profiles
-are deferred. `runScenario` now runs the annual owner controllers and exports
+Bulk destruction within one event, time-varying launch schedules and calibrated
+company-specific revenues are not implemented yet. Behavior profiles are
+deferred. `runScenario` now runs the annual owner controllers and exports
 results. `propagateScenario` remains available for physical-only comparisons.
 The original OPUS workflow remains the entry point for ordinary simulations.
 
@@ -66,6 +73,24 @@ The extension parameter CSV uses the existing three-column numeric layout:
 parameter_type,parameter_name,parameter_value
 attack,enabled,1
 ```
+
+To add any number of new constellations on top of the original background, add
+`attack,additional_constellations,1`. Each owner CSV then specifies additional
+S, Su and D counts. The extension creates `generic` from the original S/Su/D
+and retains N once. Do not include a `generic.csv` in this mode. An existing
+empty owner directory runs the generic background alone. The runnable
+[additional-constellations example](examples/additional-constellations/README.md)
+uses Starlink Gen 1 and Kuiper Gen 1 design counts, with a
+[primary-source register](examples/additional-constellations/SOURCES.md). Owner launch
+rules remain separate; shared MOCAT physics couples all owners. Economic
+optimization is not added by this population setting. The reference example
+has a header-only launch CSV and no owner cost multipliers, so `generic` and
+both named owners use the same replacement rule and shared economic inputs.
+
+Omit this switch or set it to 0 for the original allocation mode described below.
+All input validation still applies; only allocation mode requires matching the
+original per-shell totals. Automatic generic is represented in all owner outputs,
+while saved owner CSV inputs are the additional files actually read from disk.
 
 Use `0`, or omit the row, to disable attack configuration. Numeric `MOCAT` and
 `econ` overrides are supported by the extension adapter with the original OPUS
@@ -199,14 +224,28 @@ and nonnegative. Target size is a count; maximum launch rate is satellites/year.
 | `replacement` | min(maximum rate, current owner count / lifetime) |
 | `fixed` | maximum rate, regardless of current count |
 | `none` | zero |
+| `economic` | bounded best response to projected annual excess return; requires a finite maximum rate |
 
 Use target_size=0 except in target mode, and max_launch_rate=0 for none mode.
 Unlisted combinations use uncapped replacement (current owner count / lifetime).
 No launch file means replacement everywhere. Every decision, including zero rates,
 is saved with the current owner count and policy. A target rule follows the
 original buildup formula at annual intervals; it does not guarantee the target
-will be reached after simultaneous retirement and collisions. S and Su policies
-are owner-specific but are not yet independently optimized economic decisions.
+will be reached after simultaneous retirement and collisions. Economic rows
+are solved separately for each owner against the shared projected environment,
+holding non-economic rules fixed. Bounded best responses repeat until they
+converge; a nonconvergent run raises an error. No row uses economic mode by
+default, so existing example decisions retain their original behavior.
+
+To enable the mode, add a launch row such as
+`starlink-gen1,10,S,economic,0,500` to a copied scenario's launch CSV. The
+last value is a maximum rate in satellites/year, not a historical estimate.
+The optional `<scenario>-economics.csv` contains exactly the columns
+`owner_id,cost_multiplier`, e.g. `starlink-gen1,1.2`; an absent owner uses 1.
+Owner multipliers scale the upstream shell deployment cost and must be positive.
+The shared revenue remains `intercept - coef * total Su` across all owners.
+Using this fringe formula to evaluate S owners is an explicit extension
+assumption; original OPUS economically optimizes aggregate Su only.
 
 `runScenario(parameter_file, years, outputDirectory)` updates launch rates at
 year boundaries, propagates between boundaries/events, and uses the final state for the
@@ -215,6 +254,20 @@ year. Omitting outputDirectory creates a unique directory in `extensions/attack/
 An explicitly empty third argument (`''`) runs in memory only. Existing output
 directories are rejected rather than overwritten. Generated default results are
 ignored by Git through the extension's own `.gitignore`.
+
+Use `runPairedScenarios(parameter_file, years, outputDirectory)` for an attacked
+run and its no-attack control. The control uses the same scenario CSV, owner
+files, launch policy, economic parameters and event-time integration checkpoints.
+Only scheduled attack transfers are suppressed. It returns both full results
+and attacked-minus-control summaries, and by default exports a new folder with
+`attacked/`, `control/`, `owner-impact.csv`, `owner-shell-impact.csv` and
+`debris-impact.csv`. Pass `''` as the third argument for an in-memory pair.
+The example uses one common replacement policy for every owner; owner economics
+are reported but do not decide launches. Multiple attacks in one schedule have
+a shared control and a combined outcome. A fourth `attackedOwner` argument
+selects only one owner's scheduled events for a separate comparison; pass `[]`
+as the third argument to retain automatic output naming. To isolate one event
+type, run a copied scenario containing only those event rows.
 
 ## Accounting, events, and exports
 
@@ -248,6 +301,9 @@ Each export contains:
 | `owner-populations.csv` | Time, shell, owner, S, Su and D |
 | `shell-populations.csv` | Aggregate S, Su, D, N and total counts |
 | `launch-decisions.csv` | Owner-specific policy and rate at each interval start |
+| `economic-decisions.csv` | Economic-mode owner/shell rate, forecast revenue, collision risk, cost and return |
+| `owner-economics.csv` | Interval owner/shell revenues, launch spending, collision losses and discounted cash-flow proxy |
+| `attack-economics.csv` | Attack owner's nominal replacement-cost reference and contemporaneous market revenue |
 | `flows.csv` | Nonzero integrated channel totals per decision interval |
 | `events.csv`, `event-participants.csv` | Major interval records, instantaneous attacks and participating owners |
 | `fragmentations.csv` | Exact attack quantities, before/after counts and representative mass balance |
@@ -259,8 +315,16 @@ Each export contains:
 | `COMPLETE.txt` | Written last to mark a completed export |
 
 CSV quantities may contain fractional expected objects. Zero channels and finer
-reporting-time cumulative counts remain available in `result.mat`. The state
-dimensions are linear in owner count; detailed owner-pair flow accounting grows
+reporting-time cumulative counts remain available in `result.mat`.
+The cash-flow proxy is modeled revenue minus deployment spending; it excludes
+other operating costs and cannot by itself establish a realized attack loss.
+Compare attacked and otherwise identical control runs for that question.
+The paired runner automates this comparison. Both child runs snapshot the same
+event input file, while `metadata.attack_mode` and `applied_event_count` state
+whether its events were executed or suppressed.
+Nominal attack replacement cost is a valuation reference, not a booked cost.
+
+The state dimensions are linear in owner count; detailed owner-pair flow accounting grows
 approximately quadratically. Non-opt-in scenarios continue using the untouched
 upstream entry points. Regression tests compare against original MOCAT under
 equivalent launch inputs, not against the old controller's stale initial counts.

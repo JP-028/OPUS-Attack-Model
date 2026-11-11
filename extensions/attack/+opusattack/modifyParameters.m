@@ -43,13 +43,18 @@ function [VAR, econ_params, constellation_params, attack_params] = modifyParamet
                         econ_params.(parameter_name) = parameter_value;
                     end
                 case 'attack'
-                    if ~strcmp(parameter_name, 'enabled') || ~isscalar(parameter_value) || ...
+                    if ~ismember(parameter_name, {'enabled','additional_constellations'}) || ~isscalar(parameter_value) || ...
                             ~isnumeric(parameter_value) || ~isfinite(parameter_value) || ...
                             ~ismember(parameter_value, [0, 1])
                         error('OPUS:InvalidAttackConfiguration', ...
-                            'The attack setting must be enabled with a numeric value of 0 or 1.');
+                            'Attack settings enabled and additional_constellations require numeric 0 or 1.');
                     end
-                    attack_params.enabled = logical(parameter_value);
+                    % Do not add default fields: existing scenario identities stay stable.
+                    if strcmp(parameter_name,'enabled') || parameter_value==1
+                        attack_params.(parameter_name) = logical(parameter_value);
+                    elseif isfield(attack_params,parameter_name)
+                        attack_params=rmfield(attack_params,parameter_name);
+                    end
                 otherwise
                     warning('Unknown parameter_type: %s', parameter_type);
             end
