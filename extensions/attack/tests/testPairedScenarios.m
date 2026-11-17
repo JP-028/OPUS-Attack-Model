@@ -57,6 +57,16 @@ function testExportAndInputValidation(t)
     verifyTrue(t,isfile(fullfile(folder,'debris-impact.csv')));
     verifyTrue(t,isfile(fullfile(folder,'COMPLETE.txt')));
     verifyEqual(t,p.output_directory,folder);
+    figures=opusattack.plotPairedResults(folder);
+    verifyTrue(t,isfile(fullfile(figures.output_directory,'COMPLETE.txt')));
+    verifyTrue(t,isfile(fullfile(figures.output_directory,'02-debris-by-altitude.pdf')));
+    verifyTrue(t,isfile(fullfile(figures.output_directory,'01-active-fleet-starlink-gen1.png')));
+    verifyGreaterThan(t,dir(fullfile(figures.output_directory,'02-debris-by-altitude.pdf')).bytes,1000);
+    verifyError(t,@() opusattack.plotPairedResults(folder),'OPUS:PlotOutputExists');
+    comparison=opusattack.plotOwnerComparison(string(folder),fullfile(folder,'comparison'));
+    verifyTrue(t,isfile(fullfile(comparison.output_directory,'05-owner-comparison-01.pdf')));
+    verifyTrue(t,isfile(fullfile(comparison.output_directory,'owner-comparison-data.csv')));
+    verifyEqual(t,height(comparison.summary),3);
     verifyEqual(t,p.control.metadata.applied_event_count,0);
     verifyEqual(t,p.attacked.metadata.applied_event_count,4);
     verifyError(t,@() opusattack.runPairedScenarios(t.TestData.file,0.5,folder), ...

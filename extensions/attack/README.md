@@ -1,6 +1,6 @@
 # OPUS attack extension
 
-For practical instructions, read the [simulation guide](templates/SIMULATION_GUIDE.md).
+For practical instructions, read the [simulation guide](templates/SIMULATION_GUIDE.md). For paired-run figures, read the [plotting guide](PLOTTING_GUIDE.md).
 The [examples index](examples/README.md) lists the runnable scenario folders.
 
 All attack additions live in this directory. The original OPUS source files,
