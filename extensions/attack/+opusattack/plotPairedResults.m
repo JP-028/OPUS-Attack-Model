@@ -37,6 +37,18 @@ function report=plotPairedResults(pairFolder,outputFolder)
         names(end+1,1)="06-economic-development-"+owner;
         subjects(end+1,1)=owner;
         descriptions(end+1,1)="Annualized revenue and cash-flow proxy, with paired differences";
+        shellImpact=economicImpactByShell(data,owner);
+        writetable(shellImpact,fullfile(outputFolder,['economic-by-shell-' stem '.csv']));
+        f=shellEconomicFigure(shellImpact,owner,data,style);
+        exportPaperFigure(f,outputFolder,['08-economic-by-shell-' stem]);
+        names(end+1,1)="08-economic-by-shell-"+owner;
+        subjects(end+1,1)=owner;
+        descriptions(end+1,1)="Discounted revenue, spending and net cash-flow changes by shell";
+        f=replacementFigure(data,owner,style);
+        exportPaperFigure(f,outputFolder,['09-replacement-reference-' stem]);
+        names(end+1,1)="09-replacement-reference-"+owner;
+        subjects(end+1,1)=owner;
+        descriptions(end+1,1)="Nominal replacement-value reference beside discounted cash-flow difference";
     end
     f=debrisFigure(data,style);
     exportPaperFigure(f,outputFolder,'02-debris-by-altitude');
@@ -260,6 +272,125 @@ function f=componentsFigure(data,owner,style)
     xlabel(ax,'Attacked minus control (USD million)');
 end
 
+function impact=economicImpactByShell(data,owner)
+    a=data.attackedEconomics;
+    c=data.controlEconomics;
+    a=a(a.owner_id==owner,:);
+    c=c(c.owner_id==owner,:);
+    n=max([data.attackedShells.shell;data.controlShells.shell]);
+    shell=(1:n)';
+    revenue=zeros(n,1);
+    spending=zeros(n,1);
+    net=zeros(n,1);
+    for k=1:n
+        ar=a(a.shell==k,:); cr=c(c.shell==k,:);
+        revenue(k)=(sum(ar.discounted_revenue)-sum(cr.discounted_revenue))/1e6;
+        spending(k)=-(sum(ar.discounted_launch_spending)- ...
+            sum(cr.discounted_launch_spending))/1e6;
+        net(k)=(sum(ar.discounted_cash_flow_proxy)- ...
+            sum(cr.discounted_cash_flow_proxy))/1e6;
+    end
+    if any(abs(revenue+spending-net)>1e-6*max(1,max(abs(net))))
+        error('OPUS:InvalidPlotSeries','Shell economic components do not balance for %s.',owner);
+    end
+    row=data.impact(data.impact.owner_id==owner,:);
+    if height(row)~=1 || abs(sum(net)-row.delta_discounted_cash_flow_proxy/1e6)> ...
+            1e-6*max(1,abs(row.delta_discounted_cash_flow_proxy/1e6))
+        error('OPUS:InvalidPlotSeries','Shell economic totals do not match owner impact for %s.',owner);
+    end
+    root=fileparts(fileparts(mfilename('fullpath')));
+    reference=readtable(fullfile(root,'templates','shell-reference.csv'));
+    if height(reference)<n
+        error('OPUS:InvalidPlotSeries','Shell reference is shorter than the result.');
+    end
+    impact=table(shell,reference.lower_altitude_km(1:n), ...
+        reference.upper_altitude_km(1:n),revenue,spending,net, ...
+        'VariableNames',{'shell','lower_altitude_km','upper_altitude_km', ...
+        'delta_discounted_revenue_usd_million', ...
+        'less_delta_discounted_spending_usd_million', ...
+        'delta_discounted_cash_flow_usd_million'});
+end
+
+function f=shellEconomicFigure(impact,owner,data,style)
+    values=[impact.delta_discounted_revenue_usd_million, ...
+        impact.less_delta_discounted_spending_usd_million, ...
+        impact.delta_discounted_cash_flow_usd_million];
+    score=max(abs(values),[],2);
+    [~,rank]=sort(score,'descend');
+    threshold=max(1e-6,0.01*max(score));
+    material=rank(score(rank)>=threshold);
+    selected=material(1:min(8,numel(material)));
+    targetShells=unique([ ...
+        data.fragmentations.shell(data.fragmentations.owner_id==owner); ...
+        data.disablings.shell(data.disablings.owner_id==owner)]);
+    context=unique([targetShells-1;targetShells;targetShells+1]);
+    context=context(context>=1 & context<=height(impact));
+    selected=sort(unique([selected;context]));
+    plotted=values(selected,:);
+    maxValue=max(abs(plotted(:)));
+    if maxValue<0.001, maxValue=0.001; end
+    f=paperFigure(25,max(9,0.58*numel(selected)+4));
+    layout=tiledlayout(f,1,3,'Padding','loose','TileSpacing','loose');
+    title(layout,'Economic impact by shell: '+owner, ...
+        'Interpreter','none','FontWeight','normal');
+    captions={'Revenue change','Less: spending change','Net cash-flow change'};
+    colors=[style.blue;style.orange;style.dark];
+    for j=1:3
+        ax=nexttile(layout);
+        decorate(ax,style);
+        barh(ax,1:numel(selected),plotted(:,j),0.58, ...
+            'FaceColor',colors(j,:),'EdgeColor','none');
+        xline(ax,0,'-','Color',style.grey,'LineWidth',0.8);
+        ax.YDir='reverse';
+        ax.YTick=1:numel(selected);
+        if j==1
+            labels=compose('%d: %g-%g km',impact.shell(selected), ...
+                impact.lower_altitude_km(selected),impact.upper_altitude_km(selected));
+            ax.YTickLabel=cellstr(labels);
+        else
+            ax.YTickLabel={};
+        end
+        ylim(ax,[0.4 numel(selected)+0.6]);
+        xlim(ax,[-1.12*maxValue 1.12*maxValue]);
+        title(ax,captions{j},'FontWeight','normal');
+        xlabel(ax,'Discounted USD million');
+    end
+end
+
+function f=replacementFigure(data,owner,style)
+    attack=data.attackEconomics(data.attackEconomics.owner_id==owner,:);
+    if isempty(attack)
+        error('OPUS:InvalidPlotSeries','Attack valuation is missing for %s.',owner);
+    end
+    reference=sum(attack.nominal_replacement_cost)/1e6;
+    row=data.impact(data.impact.owner_id==owner,:);
+    if height(row)~=1
+        error('OPUS:InvalidPlotSeries','Expected one economic impact row for %s.',owner);
+    end
+    cash=row.delta_discounted_cash_flow_proxy/1e6;
+    f=paperFigure(19,8);
+    layout=tiledlayout(f,1,2,'Padding','loose','TileSpacing','loose');
+    title(layout,'Two economic measures: '+owner, ...
+        'Interpreter','none','FontWeight','normal');
+    ax=nexttile(layout);
+    decorate(ax,style);
+    barh(ax,1,reference,0.45,'FaceColor',style.orange,'EdgeColor','none');
+    ax.YTick=[];
+    ylim(ax,[0.5 1.5]);
+    xlim(ax,[0 max(0.01,1.15*reference)]);
+    title(ax,'Replacement-value reference','FontWeight','normal');
+    xlabel(ax,'Nominal USD million');
+    ax=nexttile(layout);
+    decorate(ax,style);
+    barh(ax,1,cash,0.45,'FaceColor',style.blue,'EdgeColor','none');
+    xline(ax,0,'-','Color',style.grey,'LineWidth',0.8);
+    ax.YTick=[];
+    ylim(ax,[0.5 1.5]);
+    limit=max(0.01,abs(cash));
+    xlim(ax,[-1.15*limit 1.15*limit]);
+    title(ax,'Attacked minus control cash flow','FontWeight','normal');
+    xlabel(ax,'Discounted USD million');
+end
 function [time,value]=activeSeries(rows,owner)
     hit=rows.owner_id==owner;
     if ~any(hit), error('OPUS:InvalidPlotSeries','Owner %s is missing from population history.',owner); end
@@ -349,5 +480,14 @@ function writeCaptions(folder,data)
     fprintf(fid,'**06 Economic development:** Each step is one model interval, annualized ');
     fprintf(fid,'by its duration. Upper panels show attacked and control revenue and ');
     fprintf(fid,'cash-flow proxy; lower panels show attacked-minus-control differences. ');
-    fprintf(fid,'These are modeled economic rates, not measured company growth or profit.\n');
+    fprintf(fid,'These are modeled economic rates, not measured company growth or profit.\n\n');
+    fprintf(fid,'**08 Economic impact by shell:** Up to eight materially changed ');
+    fprintf(fid,'shells are shown, plus each attacked shell and its neighbours. ');
+    fprintf(fid,'The companion CSV contains all shells. Revenue change plus negated ');
+    fprintf(fid,'spending change equals net discounted cash-flow change.\n\n');
+    fprintf(fid,'**09 Replacement reference:** The left panel sums nominal ');
+    fprintf(fid,'replacement-value references for attacked satellites. The right panel ');
+    fprintf(fid,'shows the owner''s modeled discounted cash-flow difference against ');
+    fprintf(fid,'its no-attack control. These are different measures and must not be ');
+    fprintf(fid,'added; the left panel is not booked launch spending.\n');
 end

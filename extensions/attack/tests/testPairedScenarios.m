@@ -62,6 +62,12 @@ function testExportAndInputValidation(t)
     verifyTrue(t,isfile(fullfile(figures.output_directory,'02-debris-by-altitude.pdf')));
     verifyTrue(t,isfile(fullfile(figures.output_directory,'01-active-fleet-starlink-gen1.png')));
     verifyTrue(t,isfile(fullfile(figures.output_directory,'06-economic-development-starlink-gen1.pdf')));
+    verifyTrue(t,isfile(fullfile(figures.output_directory,'08-economic-by-shell-starlink-gen1.pdf')));
+    verifyTrue(t,isfile(fullfile(figures.output_directory,'09-replacement-reference-starlink-gen1.pdf')));
+    shellImpact=readtable(fullfile(figures.output_directory,'economic-by-shell-starlink-gen1.csv'));
+    ownerRow=p.comparison.owners(p.comparison.owners.owner_id=="starlink-gen1",:);
+    verifyEqual(t,sum(shellImpact.delta_discounted_cash_flow_usd_million)*1e6, ...
+        ownerRow.delta_discounted_cash_flow_proxy,'AbsTol',1e-5);
     verifyGreaterThan(t,dir(fullfile(figures.output_directory,'02-debris-by-altitude.pdf')).bytes,1000);
     verifyError(t,@() opusattack.plotPairedResults(folder),'OPUS:PlotOutputExists');
     comparison=opusattack.plotOwnerComparison(string(folder),fullfile(folder,'comparison'));

@@ -18,6 +18,7 @@ function data=readPlotPair(folder)
     data.controlShells=readtable(fullfile(folder,'control','shell-populations.csv'),'TextType','string');
     data.attackedEconomics=readtable(fullfile(folder,'attacked','owner-economics.csv'),'TextType','string');
     data.controlEconomics=readtable(fullfile(folder,'control','owner-economics.csv'),'TextType','string');
+    data.attackEconomics=readtable(fullfile(folder,'attacked','attack-economics.csv'),'TextType','string');
     data.fragmentations=readtable(fullfile(folder,'attacked','fragmentations.csv'),'TextType','string');
     data.disablings=readtable(fullfile(folder,'attacked','disablings.csv'),'TextType','string');
     eventTime=[data.fragmentations.time_year;data.disablings.time_year];

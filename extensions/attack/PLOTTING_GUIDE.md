@@ -30,10 +30,10 @@ pair = opusattack.runPairedScenarios(parameterFile, 2);
 figures = opusattack.plotPairedResults(pair.output_directory);
 ```
 
-A pair with several targeted owners gets one active-fleet, economic-trajectory,
-economic-components and economic-development figure per targeted owner, plus
-one shared debris figure. A pair without an applied attack has no attack
-figures to plot.
+A pair with several targeted owners gets owner-specific active-fleet,
+economic-trajectory, economic-components, economic-development, shell-impact
+and replacement-reference figures, plus one shared debris figure.
+A pair without an applied attack has no attack figures to plot.
 
 ## Figures
 
@@ -44,6 +44,8 @@ figures to plot.
 | `03-economic-trajectory-<owner>` | Cumulative difference in the discounted cash-flow proxy, separately for the targeted owner and all other owners combined. |
 | `04-economic-components-<owner>` | Change in modeled revenue, the contribution from changed launch spending, and their net cash-flow difference. |
 | `06-economic-development-<owner>` | Annualized modeled revenue and cash-flow proxy for attacked and control runs, plus their differences. Each step covers one model interval. |
+| `08-economic-by-shell-<owner>` | Discounted revenue, spending and net cash-flow differences in material and attacked shells. The companion CSV retains all shells. |
+| `09-replacement-reference-<owner>` | Nominal replacement-value reference beside the owner's discounted cash-flow difference. They are separate measures. |
 
 The event lines have no in-plot labels so they cannot cover the data. Dotted
 means fragmentation, dashed means disabling, and dash-dot means both at the
@@ -88,6 +90,28 @@ The size-adjusted unit is USD million of discounted cash-flow difference per
 satellites appears as n/a. Compare runs with the same horizon and attack
 schedule when interpreting this value. Full owner IDs and numbers remain
 in the CSV if a displayed label is shortened.
+
+## Compare fragmentation with disabling
+
+Use two completed paired experiments that differ only in whether **one**
+satellite is fragmented or disabled. Their event rows must have the same
+`time_year`, `owner_id`, `shell`, `population` and `count=1`. Keep the
+scenario parameters, initial owner counts, launch rules and run horizon the
+same. The function verifies that the no-attack control trajectories and
+economic records match, and rejects a mismatched pair.
+
+```matlab
+comparison = opusattack.plotAttackTypeComparison(fragmentationPairFolder, ...
+    disablingPairFolder);
+disp(comparison.output_directory);
+```
+
+The output contains `10-fragmentation-vs-disabling-01.pdf` and `.png`,
+`attack-type-comparison.csv`, a caption and a completion marker. The
+figure shows each owner's discounted cash-flow proxy difference against
+its own no-attack control. Orange circles represent fragmentation and blue
+squares disabling. Additional pages appear after ten owners. This comparison
+does not include replacement-value references as realized spending.
 
 ## File formats and layout
 
