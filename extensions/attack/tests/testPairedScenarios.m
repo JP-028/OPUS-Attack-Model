@@ -61,11 +61,18 @@ function testExportAndInputValidation(t)
     verifyTrue(t,isfile(fullfile(figures.output_directory,'COMPLETE.txt')));
     verifyTrue(t,isfile(fullfile(figures.output_directory,'02-debris-by-altitude.pdf')));
     verifyTrue(t,isfile(fullfile(figures.output_directory,'01-active-fleet-starlink-gen1.png')));
+    verifyTrue(t,isfile(fullfile(figures.output_directory,'06-economic-development-starlink-gen1.pdf')));
     verifyGreaterThan(t,dir(fullfile(figures.output_directory,'02-debris-by-altitude.pdf')).bytes,1000);
     verifyError(t,@() opusattack.plotPairedResults(folder),'OPUS:PlotOutputExists');
     comparison=opusattack.plotOwnerComparison(string(folder),fullfile(folder,'comparison'));
     verifyTrue(t,isfile(fullfile(comparison.output_directory,'05-owner-comparison-01.pdf')));
     verifyTrue(t,isfile(fullfile(comparison.output_directory,'owner-comparison-data.csv')));
+    verifyTrue(t,isfile(fullfile(comparison.output_directory,'07-owner-comparison-normalized-01.pdf')));
+    row=comparison.summary(comparison.summary.owner_id=="starlink-gen1",:);
+    expected=row.delta_discounted_cash_flow_proxy/ ...
+        p.comparison.owners.initial_active(p.comparison.owners.owner_id=="starlink-gen1") ...
+        *1000/1e6;
+    verifyEqual(t,row.per_1000_initial_active,expected,'AbsTol',1e-9);
     verifyEqual(t,height(comparison.summary),3);
     verifyEqual(t,p.control.metadata.applied_event_count,0);
     verifyEqual(t,p.attacked.metadata.applied_event_count,4);

@@ -1,4 +1,4 @@
-﻿function report=plotPairedResults(pairFolder,outputFolder)
+function report=plotPairedResults(pairFolder,outputFolder)
 % Export publication-style figures from a completed attacked/control pair.
 % The simulation and its input files are never modified or rerun.
     if nargin<1, error('OPUS:MissingPlotPair','Supply a paired result folder.'); end
@@ -32,6 +32,11 @@
         names(end+1,1)="04-economic-components-"+owner;
         subjects(end+1,1)=owner;
         descriptions(end+1,1)="Revenue and spending contributions to cash-flow difference";
+        f=economicDevelopmentFigure(data,owner,style);
+        exportPaperFigure(f,outputFolder,['06-economic-development-' stem]);
+        names(end+1,1)="06-economic-development-"+owner;
+        subjects(end+1,1)=owner;
+        descriptions(end+1,1)="Annualized revenue and cash-flow proxy, with paired differences";
     end
     f=debrisFigure(data,style);
     exportPaperFigure(f,outputFolder,'02-debris-by-altitude');
@@ -151,6 +156,80 @@ function f=economicFigure(data,owner,style)
     xlim(ax2,[0 max(ta)]);
 end
 
+function f=economicDevelopmentFigure(data,owner,style)
+    [ta,ra,ca]=ownerEconomicRates(data.attackedEconomics,owner);
+    [tc,rc,cc]=ownerEconomicRates(data.controlEconomics,owner);
+    if ~isequal(ta,tc)
+        error('OPUS:InvalidPlotSeries','Paired economic intervals do not match.');
+    end
+    f=paperFigure(22,14);
+    layout=tiledlayout(f,2,2,'Padding','loose','TileSpacing','loose');
+    title(layout,'Economic development: '+owner,'Interpreter','none','FontWeight','normal');
+    ax=nexttile(layout,1);
+    decorate(ax,style);
+    plotEventRules(ax,data.events,style);
+    attacked=stairs(ax,ta,[ra;ra(end)],'-','Color',style.orange,'LineWidth',1.55);
+    control=stairs(ax,ta,[rc;rc(end)],'--','Color',style.grey,'LineWidth',1.25);
+    ylabel(ax,'Revenue (USD million/year)');
+    xlim(ax,[ta(1) ta(end)]);
+    legend(ax,[attacked control],{'Attacked','No attack'}, ...
+        'Location','northwest','Box','off');
+    padY(ax,[ra;rc]);
+    ax=nexttile(layout,2);
+    decorate(ax,style);
+    plotEventRules(ax,data.events,style);
+    stairs(ax,ta,[ca;ca(end)],'-','Color',style.orange,'LineWidth',1.55);
+    stairs(ax,ta,[cc;cc(end)],'--','Color',style.grey,'LineWidth',1.25);
+    ylabel(ax,'Cash-flow proxy (USD million/year)');
+    padY(ax,[ca;cc]);
+    xlim(ax,[ta(1) ta(end)]);
+    ax=nexttile(layout,3);
+    decorate(ax,style);
+    plotEventRules(ax,data.events,style);
+    yline(ax,0,'-','Color',style.light,'HandleVisibility','off');
+    delta=ra-rc;
+    stairs(ax,ta,[delta;delta(end)],'-','Color',style.blue,'LineWidth',1.55);
+    ylabel(ax,'Revenue difference (USD million/year)');
+    padY(ax,[delta;0]);
+    xlabel(ax,'Simulation time (years)');
+    xlim(ax,[ta(1) ta(end)]);
+    ax=nexttile(layout,4);
+    decorate(ax,style);
+    plotEventRules(ax,data.events,style);
+    yline(ax,0,'-','Color',style.light,'HandleVisibility','off');
+    delta=ca-cc;
+    stairs(ax,ta,[delta;delta(end)],'-','Color',style.blue,'LineWidth',1.55);
+    ylabel(ax,'Cash-flow difference (USD million/year)');
+    padY(ax,[delta;0]);
+    xlabel(ax,'Simulation time (years)');
+    xlim(ax,[ta(1) ta(end)]);
+end
+
+function [edges,revenue,cashFlow]=ownerEconomicRates(rows,owner)
+    rows=rows(rows.owner_id==owner,:);
+    if isempty(rows)
+        error('OPUS:InvalidPlotSeries','Owner %s has no economic records.',owner);
+    end
+    ends=unique(rows.end_time);
+    starts=zeros(numel(ends),1);
+    revenue=zeros(numel(ends),1);
+    cashFlow=zeros(numel(ends),1);
+    for j=1:numel(ends)
+        segment=rows(rows.end_time==ends(j),:);
+        start=unique(segment.start_time);
+        if numel(start)~=1 || ends(j)<=start
+            error('OPUS:InvalidPlotSeries','Invalid economic interval for %s.',owner);
+        end
+        starts(j)=start;
+        duration=ends(j)-start;
+        revenue(j)=sum(segment.modeled_revenue)/duration/1e6;
+        cashFlow(j)=sum(segment.cash_flow_proxy)/duration/1e6;
+    end
+    if any(abs(starts(2:end)-ends(1:end-1))>1e-8)
+        error('OPUS:InvalidPlotSeries','Economic intervals are not contiguous for %s.',owner);
+    end
+    edges=[starts(1);ends];
+end
 function f=componentsFigure(data,owner,style)
     row=data.impact(data.impact.owner_id==owner,:);
     if height(row)~=1, error('OPUS:InvalidPlotSeries','Expected one impact row for %s.',owner); end
@@ -212,6 +291,14 @@ function [time,value]=economicSeries(rows,owner,selectedOwner)
     end
 end
 
+function padY(ax,values)
+    low=min(values(:));
+    high=max(values(:));
+    span=high-low;
+    if span<1e-10, span=max(1,0.05*abs(high)); end
+    margin=0.08*span;
+    ylim(ax,[low-margin high+margin]);
+end
 function f=paperFigure(width,height)
     f=figure('Visible','off','Color','white','Units','centimeters', ...
         'Position',[2 2 width height],'Renderer','painters');
@@ -258,5 +345,9 @@ function writeCaptions(folder,data)
     fprintf(fid,'at recorded interval ends; plotted segments are not smoothed estimates.\n\n');
     fprintf(fid,'**04 Economic components:** Change in revenue, negated change in ');
     fprintf(fid,'spending, and their sum as the net cash-flow proxy change. ');
-    fprintf(fid,'Reduced spending is shown as a positive contribution.\n');
+    fprintf(fid,'Reduced spending is shown as a positive contribution.\n\n');
+    fprintf(fid,'**06 Economic development:** Each step is one model interval, annualized ');
+    fprintf(fid,'by its duration. Upper panels show attacked and control revenue and ');
+    fprintf(fid,'cash-flow proxy; lower panels show attacked-minus-control differences. ');
+    fprintf(fid,'These are modeled economic rates, not measured company growth or profit.\n');
 end

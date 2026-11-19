@@ -1,4 +1,4 @@
-﻿# Plotting paired attack results
+# Plotting paired attack results
 
 The plotting functions read completed **paired** experiments. They use the
 attacked run and its otherwise identical no-attack control. They do not rerun
@@ -30,9 +30,10 @@ pair = opusattack.runPairedScenarios(parameterFile, 2);
 figures = opusattack.plotPairedResults(pair.output_directory);
 ```
 
-A pair with several targeted owners gets one active-fleet, economic-trajectory
-and economic-components figure per targeted owner, plus one shared debris
-figure. A pair without an applied attack has no attack figures to plot.
+A pair with several targeted owners gets one active-fleet, economic-trajectory,
+economic-components and economic-development figure per targeted owner, plus
+one shared debris figure. A pair without an applied attack has no attack
+figures to plot.
 
 ## Figures
 
@@ -42,6 +43,7 @@ figure. A pair without an applied attack has no attack figures to plot.
 | `02-debris-by-altitude` | Difference in shared N over time and altitude. Its view focuses on changed and targeted shells with two shells of context. The model still treats each shell as uniformly distributed. |
 | `03-economic-trajectory-<owner>` | Cumulative difference in the discounted cash-flow proxy, separately for the targeted owner and all other owners combined. |
 | `04-economic-components-<owner>` | Change in modeled revenue, the contribution from changed launch spending, and their net cash-flow difference. |
+| `06-economic-development-<owner>` | Annualized modeled revenue and cash-flow proxy for attacked and control runs, plus their differences. Each step covers one model interval. |
 
 The event lines have no in-plot labels so they cannot cover the data. Dotted
 means fragmentation, dashed means disabling, and dash-dot means both at the
@@ -50,11 +52,13 @@ The heatmap colours are interpolated for display between output samples;
 the underlying model uses discrete altitude shells. The figures contain no
 individual debris positions or collision maneuvers.
 
-The economic proxy is modeled revenue less launch spending. It omits other
-company costs, so it should not be described as profit or total economic
-damage. A lower launch bill can make the net proxy less negative even when
-revenue falls. See `owner-economics.csv` and `owner-impact.csv` for the
-numbers behind the economic figures.
+Economic development is shown as an average annualized rate for each recorded
+interval, since event checkpoints can create unequal interval lengths. It is
+not a measured company growth rate. The economic proxy is modeled revenue
+less launch spending. It omits other company costs, so it should not be
+described as profit or total economic damage. A lower launch bill can make
+the net proxy less negative even when revenue falls. See
+`owner-economics.csv` and `owner-impact.csv` for the underlying values.
 
 ## Compare owners across experiments
 
@@ -70,13 +74,20 @@ comparison = opusattack.plotOwnerComparison(pairs);
 disp(comparison.output_directory);
 ```
 
-This generates `05-owner-comparison-01.pdf` and `.png` (additional numbered
-pages when needed), `owner-comparison-data.csv`, a caption file and a
-completion marker. Each panel shows one paired experiment. Orange means an
-owner targeted in that experiment, blue means another named owner, and grey
-means the generic owner. All panels share one horizontal scale. Panels contain
-at most ten owner rows; extra owners receive another panel. Full owner IDs and
-values remain in the CSV even if a displayed label is shortened.
+This generates `05-owner-comparison-01.pdf` and `.png` for absolute effects,
+and `07-owner-comparison-normalized-01.pdf` and `.png` for the size-adjusted
+effect. Extra numbered pages appear when needed. The output also includes
+`owner-comparison-data.csv`, a caption file and a completion marker.
+
+Each panel shows one paired experiment. Orange means a targeted owner, blue
+another named owner, and grey the generic owner. Each comparison uses one
+horizontal scale across its panels. At most ten owners appear per panel.
+
+The size-adjusted unit is USD million of discounted cash-flow difference per
+1,000 initially active satellites. An owner with zero initial active
+satellites appears as n/a. Compare runs with the same horizon and attack
+schedule when interpreting this value. Full owner IDs and numbers remain
+in the CSV if a displayed label is shortened.
 
 ## File formats and layout
 
