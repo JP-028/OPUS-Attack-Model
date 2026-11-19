@@ -28,6 +28,12 @@ function testMatchedSingleSatelliteComparison(t)
             fullfile(folder,'pair'));
         pairFolders(i)=string(pair.output_directory);
     end
+    for i=1:2
+        figures=opusattack.plotPairedResults(pairFolders(i), ...
+            fullfile(temporary.Folder,char(kinds(i)+"-figures")));
+        verifyTrue(t,isfile(fullfile(figures.output_directory, ...
+            '08-economic-by-shell-attacked.pdf')));
+    end
     report=opusattack.plotAttackTypeComparison(pairFolders(1),pairFolders(2), ...
         fullfile(temporary.Folder,'comparison'));
     verifyTrue(t,isfile(fullfile(report.output_directory,'COMPLETE.txt')));

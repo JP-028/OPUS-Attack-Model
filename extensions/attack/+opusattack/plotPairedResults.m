@@ -320,9 +320,16 @@ function f=shellEconomicFigure(impact,owner,data,style)
     threshold=max(1e-6,0.01*max(score));
     material=rank(score(rank)>=threshold);
     selected=material(1:min(8,numel(material)));
-    targetShells=unique([ ...
-        data.fragmentations.shell(data.fragmentations.owner_id==owner); ...
-        data.disablings.shell(data.disablings.owner_id==owner)]);
+    targetShells=zeros(0,1);
+    if ~isempty(data.fragmentations)
+        targetShells=[targetShells; ...
+            data.fragmentations.shell(data.fragmentations.owner_id==owner)];
+    end
+    if ~isempty(data.disablings)
+        targetShells=[targetShells; ...
+            data.disablings.shell(data.disablings.owner_id==owner)];
+    end
+    targetShells=unique(targetShells);
     context=unique([targetShells-1;targetShells;targetShells+1]);
     context=context(context>=1 & context<=height(impact));
     selected=sort(unique([selected;context]));
